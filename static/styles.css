@@ -41,6 +41,13 @@ body {
   margin-bottom: 20px;
 }
 
+.subtitle {
+  text-align: center; /* Center the text */
+  font-size: 0.875rem; /* Slightly smaller font size */
+  color: var(--text-muted); /* Muted color */
+  margin-top: 1rem; /* Space above the subtitle */
+}
+
 #toggleDarkMode {
   padding: 0.75rem 1.5rem;
   background-color: var(--primary-color);

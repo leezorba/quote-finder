@@ -99,16 +99,20 @@ function setLoadingState(isLoading, elements) {
 
 function submitQuery() {
   const input = document.querySelector("#question");
-  const loadingSpinner = document.querySelector("#loading-spinner");
-  const resultsContainer = document.querySelector("#responseContainer");
+  const elements = {
+    submitButton: document.getElementById("submitButton"),
+    loadingIndicator: document.getElementById("loadingIndicator"),
+    responseContainer: document.getElementById("responseContainer"),
+  };
 
   if (!input.value.trim()) {
     alert("Please enter a question");
+    setLoadingState(false, elements); // Ensure loading state is reset
     return;
   }
 
-  loadingSpinner.style.display = "block";
-  resultsContainer.innerHTML = "";
+  elements.responseContainer.innerHTML = ""; // Clear previous results
+  setLoadingState(true, elements); // Show loading indicator
 
   fetch("/query", {
     method: "POST",
@@ -119,50 +123,50 @@ function submitQuery() {
     .then((data) => {
       if (data.error) throw new Error(data.error);
       if (data.job_id) {
-        pollJobStatus(data.job_id);
+        pollJobStatus(data.job_id, elements); // Poll the job status
       } else if (data.response_text) {
         displayResults(data.response_text);
+        setLoadingState(false, elements); // Reset loading state after success
       }
     })
     .catch((error) => {
-      loadingSpinner.style.display = "none";
-      resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+      console.error("Error:", error.message);
+      elements.responseContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+      setLoadingState(false, elements); // Reset loading state after error
     });
 }
 
-function pollJobStatus(jobId, retries = 30) {
+function pollJobStatus(jobId, elements, retries = 30) {
   const pollingInterval = 2000; // 2 seconds
-  const loadingSpinner = document.querySelector("#loading-spinner");
-  const resultsContainer = document.querySelector("#responseContainer");
-
-  if (!document.querySelector("#progress-message")) {
-    resultsContainer.innerHTML =
-      '<p id="progress-message">Processing query...</p>';
-  }
 
   fetch(`/status/${jobId}`)
-    .then((response) => response.json())
+    .then((response) => {
+      if (response.status === 404) {
+        throw new Error("Job not found or expired. Please try again.");
+      }
+      return response.json();
+    })
     .then((data) => {
       if (data.status === "pending") {
-        document.querySelector("#progress-message").textContent =
-          "Searching through conference talks...";
         if (retries > 0) {
-          setTimeout(() => pollJobStatus(jobId, retries - 1), pollingInterval);
+          setTimeout(
+            () => pollJobStatus(jobId, elements, retries - 1),
+            pollingInterval
+          );
         } else {
           throw new Error("The query took too long. Please try again later.");
         }
       } else if (data.status === "complete") {
-        loadingSpinner.style.display = "none";
-        document.querySelector("#progress-message").remove();
         displayResults(data.response_text);
+        setLoadingState(false, elements); // Reset loading state after success
       } else if (data.status === "error") {
-        loadingSpinner.style.display = "none";
         throw new Error(data.error);
       }
     })
     .catch((error) => {
-      loadingSpinner.style.display = "none";
-      resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+      console.error("Polling error:", error.message);
+      elements.responseContainer.innerHTML = `<p class="error">${error.message}</p>`;
+      setLoadingState(false, elements); // Reset loading state after error
     });
 }
 
