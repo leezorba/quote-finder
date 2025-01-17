@@ -101,7 +101,7 @@ function setLoadingState(isLoading, elements) {
   }
 }
 
-function submitQuery() {
+async function submitQuery() {
   const input = document.querySelector("#question");
   const elements = {
     submitButton: document.getElementById("submitButton"),
@@ -109,85 +109,106 @@ function submitQuery() {
     responseContainer: document.getElementById("responseContainer"),
   };
 
-  // Input Validation
-  if (!input.value.trim()) {
-    alert("Please enter a valid question");
-    setLoadingState(false, elements);
-    return;
-  }
-
-  // Clear old results and show spinner
-  elements.responseContainer.innerHTML = "";
-  setLoadingState(true, elements);
-
-  fetch("/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question: input.value.trim() }),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      // If server returned an immediate error
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      // If we got a job_id, poll the /status/<job_id> route
-      if (data.job_id) {
-        pollJobStatus(data.job_id, elements);
-      }
-      // Or if the server returned actual data directly (without queueing)
-      else if (data.response_text) {
-        displayResults(data.response_text);
-        setLoadingState(false, elements);
-      }
-    })
-    .catch((error) => {
-      console.error("Error:", error.message);
-      elements.responseContainer.innerHTML = `
-        <p class="error">Error: ${error.message}. Please try again later.</p>`;
-      setLoadingState(false, elements);
-    });
-}
-
-function pollJobStatus(jobId, elements, retries = 60) {
-  const pollingInterval = 2000; // 2 seconds
-  let attempts = 0;
-
-  const poll = () => {
-    if (attempts >= retries) {
-      setLoadingState(false, elements);
-      elements.responseContainer.innerHTML = `
-        <p class="error">The query took too long. Please try again.</p>`;
+  try {
+    if (!input.value.trim()) {
+      alert("Please enter a valid question");
       return;
     }
 
-    attempts++;
-    fetch(`/status/${jobId}`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Server returned ${response.status}`);
+    elements.responseContainer.innerHTML = "";
+    setLoadingState(true, elements);
+
+    const response = await fetch("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: input.value.trim() }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server error ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("Query response:", data);
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    if (data.job_id) {
+      pollJobStatus(data.job_id, elements);
+    } else if (data.response_text) {
+      displayResults(data.response_text);
+      setLoadingState(false, elements);
+    } else {
+      throw new Error("Invalid response format");
+    }
+  } catch (error) {
+    console.error("Query error:", error);
+    elements.responseContainer.innerHTML = `
+      <p class="error">Error: ${error.message}</p>`;
+    setLoadingState(false, elements);
+  }
+}
+
+function pollJobStatus(jobId, elements, maxAttempts = 60) {
+  const pollingInterval = 2000;
+  let attempts = 0;
+
+  setLoadingState(true, elements);
+  elements.responseContainer.innerHTML = `
+    <p>Processing your request... (${attempts}/${maxAttempts})</p>`;
+
+  const poll = async () => {
+    try {
+      attempts++;
+
+      if (attempts > maxAttempts) {
+        throw new Error("Request timeout - please try again");
+      }
+
+      const response = await fetch(`/status/${jobId}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("Job not found - please try again");
         }
-        return response.json();
-      })
-      .then((data) => {
-        console.log(`Poll attempt ${attempts}, status:`, data); // Debug logging
-        if (data.status === "pending") {
-          setTimeout(poll, pollingInterval);
-        } else if (data.status === "complete" && data.response_text) {
-          displayResults(data.response_text);
+        throw new Error(`Server error ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(`Poll attempt ${attempts}, status:`, data);
+
+      elements.responseContainer.innerHTML = `
+        <p>Processing your request... (${attempts}/${maxAttempts})</p>`;
+
+      switch (data.status) {
+        case "complete":
+          if (data.response_text) {
+            displayResults(data.response_text);
+          } else {
+            throw new Error("No results returned");
+          }
           setLoadingState(false, elements);
-        } else if (data.status === "error") {
-          throw new Error(
-            data.error || "An error occurred processing your request"
-          );
-        }
-      })
-      .catch((error) => {
-        console.error("Polling error:", error);
-        setLoadingState(false, elements);
-        elements.responseContainer.innerHTML = `
-          <p class="error">Error: ${error.message}. Please try again.</p>`;
-      });
+          break;
+
+        case "error":
+          throw new Error(data.error || "Processing error");
+
+        case "pending":
+          await new Promise((resolve) => setTimeout(resolve, pollingInterval));
+          poll();
+          break;
+
+        default:
+          throw new Error(`Unknown status: ${data.status}`);
+      }
+    } catch (error) {
+      console.error("Polling error:", error);
+      elements.responseContainer.innerHTML = `
+        <p class="error">Error: ${error.message}</p>`;
+      setLoadingState(false, elements);
+    }
   };
 
   poll();
