@@ -187,9 +187,9 @@ def job_status(job_id):
         return jsonify({'status': 'error', 'error': result['error']})
     return jsonify({'status': 'pending'})
 
-# Before first request, clear any stale results
-@app.before_first_request
+@app.before_serving
 def clear_stale_jobs():
+    """Clear stale jobs before serving requests."""
     job_results.clear()
 
 if __name__ == '__main__':

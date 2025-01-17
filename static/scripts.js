@@ -124,10 +124,6 @@ async function submitQuery() {
       body: JSON.stringify({ question: input.value.trim() }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Server error ${response.status}`);
-    }
-
     const data = await response.json();
     console.log("Query response:", data);
 
@@ -137,16 +133,14 @@ async function submitQuery() {
 
     if (data.job_id) {
       pollJobStatus(data.job_id, elements);
-    } else if (data.response_text) {
-      displayResults(data.response_text);
-      setLoadingState(false, elements);
     } else {
-      throw new Error("Invalid response format");
+      throw new Error("Unexpected response format");
     }
   } catch (error) {
     console.error("Query error:", error);
     elements.responseContainer.innerHTML = `
       <p class="error">Error: ${error.message}</p>`;
+  } finally {
     setLoadingState(false, elements);
   }
 }
@@ -154,10 +148,6 @@ async function submitQuery() {
 function pollJobStatus(jobId, elements, maxAttempts = 60) {
   const pollingInterval = 2000;
   let attempts = 0;
-
-  setLoadingState(true, elements);
-  elements.responseContainer.innerHTML = `
-    <p>Processing your request... (${attempts}/${maxAttempts})</p>`;
 
   const poll = async () => {
     try {
@@ -168,7 +158,6 @@ function pollJobStatus(jobId, elements, maxAttempts = 60) {
       }
 
       const response = await fetch(`/status/${jobId}`);
-
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error("Job not found - please try again");
@@ -179,29 +168,17 @@ function pollJobStatus(jobId, elements, maxAttempts = 60) {
       const data = await response.json();
       console.log(`Poll attempt ${attempts}, status:`, data);
 
-      elements.responseContainer.innerHTML = `
-        <p>Processing your request... (${attempts}/${maxAttempts})</p>`;
-
-      switch (data.status) {
-        case "complete":
-          if (data.response_text) {
-            displayResults(data.response_text);
-          } else {
-            throw new Error("No results returned");
-          }
-          setLoadingState(false, elements);
-          break;
-
-        case "error":
-          throw new Error(data.error || "Processing error");
-
-        case "pending":
-          await new Promise((resolve) => setTimeout(resolve, pollingInterval));
-          poll();
-          break;
-
-        default:
-          throw new Error(`Unknown status: ${data.status}`);
+      if (data.status === "complete") {
+        if (data.response_text) {
+          displayResults(data.response_text);
+        } else {
+          throw new Error("No results returned");
+        }
+        setLoadingState(false, elements);
+      } else if (data.status === "error") {
+        throw new Error(data.error || "Processing error");
+      } else if (data.status === "pending") {
+        setTimeout(poll, pollingInterval);
       }
     } catch (error) {
       console.error("Polling error:", error);
