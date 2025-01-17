@@ -1,5 +1,3 @@
-// scripts.js
-
 let allQuotes = [];
 let displayedCount = 5;
 
@@ -116,16 +114,30 @@ function submitQuery() {
     });
 }
 
-function pollJobStatus(jobId) {
+function pollJobStatus(jobId, retries = 10) {
+  const loadingSpinner = document.querySelector("#loading-spinner");
+  const resultsContainer = document.querySelector("#results-container");
+
+  // Add a progress message
+  if (!document.querySelector("#progress-message")) {
+    resultsContainer.innerHTML =
+      '<p id="progress-message">Processing query...</p>';
+  }
+
   fetch(`/status/${jobId}`)
     .then((response) => response.json())
     .then((data) => {
-      const loadingSpinner = document.querySelector("#loading-spinner");
-
       if (data.status === "pending") {
-        setTimeout(() => pollJobStatus(jobId), 1000);
+        document.querySelector("#progress-message").textContent =
+          "Searching through conference talks...";
+        if (retries > 0) {
+          setTimeout(() => pollJobStatus(jobId, retries - 1), 1000);
+        } else {
+          throw new Error("The query took too long. Please try again later.");
+        }
       } else if (data.status === "complete") {
         loadingSpinner.style.display = "none";
+        document.querySelector("#progress-message").remove();
         displayResults(data.response_text);
       } else if (data.status === "error") {
         loadingSpinner.style.display = "none";
@@ -133,20 +145,17 @@ function pollJobStatus(jobId) {
       }
     })
     .catch((error) => {
-      const loadingSpinner = document.querySelector("#loading-spinner");
-      const resultsContainer = document.querySelector("#results-container");
       loadingSpinner.style.display = "none";
       resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     });
 }
 
 function showError(error) {
-  // Display the error message to the user
   const container = document.getElementById("responseContainer");
   container.style.display = "block";
   container.innerHTML = `
     <div class="quote-card error">
-      <p>${error.message}</p>
+      <p>${error}</p>
     </div>
   `;
 }
@@ -199,8 +208,7 @@ function renderQuotes() {
     .map((quote, index) => {
       const videoId = getYouTubeVideoId(quote.youtube_link);
       const startTime = parseInt(quote.start_time) || 0;
-      const endTime = parseInt(quote.end_time) || 0;
-      return generateQuoteCard(quote, videoId, startTime, endTime, index);
+      return generateQuoteCard(quote, videoId, startTime, index);
     })
     .join("");
 
@@ -208,7 +216,7 @@ function renderQuotes() {
   initYouTubeAPI();
 }
 
-function generateQuoteCard(quote, videoId, startTime, endTime, index) {
+function generateQuoteCard(quote, videoId, startTime, index) {
   const session = getSessionInfo(quote.paragraph_deep_link);
   const videoEmbed = videoId
     ? generateVideoEmbed(videoId, startTime, index)

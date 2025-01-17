@@ -5,19 +5,24 @@ import threading
 job_queue = Queue()
 job_results = {}
 
-def process_jobs():
-    """Background worker to process jobs"""
+def process_jobs(process_query):
+    """
+    Background worker to process jobs.
+    Dynamically receives the `process_query` function to avoid circular imports.
+    """
     while True:
         job_id, user_message = job_queue.get()
         try:
-            # Actual processing will be imported from main.py
-            from main import process_query
             result = process_query(user_message)
             job_results[job_id] = {'status': 'complete', 'data': result}
         except Exception as e:
             job_results[job_id] = {'status': 'error', 'error': str(e)}
-        job_queue.task_done()
+        finally:
+            job_queue.task_done()
 
-# Start background worker
-worker = threading.Thread(target=process_jobs, daemon=True)
-worker.start()
+def start_worker(process_query):
+    """
+    Start the background worker thread with the provided `process_query` function.
+    """
+    worker = threading.Thread(target=process_jobs, args=(process_query,), daemon=True)
+    worker.start()

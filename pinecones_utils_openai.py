@@ -1,5 +1,3 @@
-# pinecones_utils_openai.py
-
 import os
 import time
 import logging
@@ -28,14 +26,17 @@ if not PINECONE_API_KEY or not OPENAI_API_KEY:
     raise ValueError("Missing required API keys. Please set PINECONE_API_KEY and OPENAI_API_KEY environment variables.")
 
 # Create the clients
-pc = Pinecone(api_key=PINECONE_API_KEY)
+pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Constants
-INDEX_NAME = "general-conf-embed3"  # new index for 3072-dim
-NAMESPACE = "gc-2018-2024"          # using the same namespace as e5
-DIMENSION = 3072                    # text-embedding-3-large dimension
-BATCH_SIZE = 100                    # number of texts to embed at once
+INDEX_NAME = "general-conf-embed3"  # Index for 3072-dim embeddings
+NAMESPACE = "gc-2018-2024"
+DIMENSION = 3072
+BATCH_SIZE = 100
+
+# Global Pinecone index to avoid reinitialization
+pinecone_index = None
 
 def validate_embedding_dimension(embedding: List[float]) -> None:
     """Validates that an embedding has the correct dimension."""
@@ -43,11 +44,15 @@ def validate_embedding_dimension(embedding: List[float]) -> None:
         raise ValueError(f"Expected dimension {DIMENSION}, got {len(embedding)}")
 
 def setup_openai_pinecone_index():
-    """Creates or checks the Pinecone index."""
+    """Creates or checks the Pinecone index and initializes it globally."""
+    global pinecone_index
+    if pinecone_index:
+        return pinecone_index
+
     logger.info(f"Checking for index: {INDEX_NAME}")
-    if not pc.has_index(INDEX_NAME):
+    if not pinecone_client.has_index(INDEX_NAME):
         logger.info(f"Creating new index: {INDEX_NAME}")
-        pc.create_index(
+        pinecone_client.create_index(
             name=INDEX_NAME,
             dimension=DIMENSION,
             metric="cosine",
@@ -59,16 +64,16 @@ def setup_openai_pinecone_index():
         logger.info(f"Created Pinecone index: {INDEX_NAME}")
 
     logger.info("Waiting for index to be ready...")
-    while not pc.describe_index(INDEX_NAME).status['ready']:
+    while not pinecone_client.describe_index(INDEX_NAME).status['ready']:
         time.sleep(1)
 
+    pinecone_index = pinecone_client.Index(INDEX_NAME)
     logger.info(f"Pinecone index '{INDEX_NAME}' is ready.")
-    return pc.Index(INDEX_NAME)
+    return pinecone_index
 
 def embed_texts_with_openai(texts: List[str], model: str = "text-embedding-3-large", batch_size: int = BATCH_SIZE) -> List[List[float]]:
     """
-    Creates embeddings using OpenAI's new API format (>=1.0.0)
-    Returns a list of embeddings.
+    Creates embeddings using OpenAI's API and returns a list of embeddings.
     """
     all_embeddings = []
     total_batches = (len(texts) - 1) // batch_size + 1
@@ -81,7 +86,6 @@ def embed_texts_with_openai(texts: List[str], model: str = "text-embedding-3-lar
         logger.info(f"Processing batch {batch_num}/{total_batches}, size {len(batch)}")
         
         try:
-            # New OpenAI API syntax
             response = openai_client.embeddings.create(
                 model=model,
                 input=batch
@@ -112,7 +116,7 @@ def query_openai_paragraphs(query: str, top_k=10) -> List[dict]:
     Query the index using OpenAI embeddings.
     Returns a list of matching paragraph metadata.
     """
-    index = setup_openai_pinecone_index()
+    index = setup_openai_pinecone_index()  # Use global index
     logger.info("Pinecone index ready for querying.")
 
     # Embed the query using OpenAI
@@ -129,20 +133,19 @@ def query_openai_paragraphs(query: str, top_k=10) -> List[dict]:
         include_metadata=True
     )
 
-    matches = response.matches  # New API returns .matches directly
+    matches = response.matches
     logger.info(f"Retrieved {len(matches)} matches from Pinecone.")
 
     # Format the results
-    results = []
-    for match in matches:
-        results.append({
+    return [
+        {
             "id": match.id,
             "score": match.score,
             "paragraph_text": match.metadata.get("paragraph_text", ""),
             "metadata": match.metadata
-        })
-
-    return results
+        }
+        for match in matches
+    ]
 
 def upsert_openai_embeddings(paragraphs: List[dict]) -> None:
     """

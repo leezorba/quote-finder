@@ -1,1 +1,1 @@
-web: gunicorn main:app --workers 2
+web: gunicorn main:app --workers 2 --timeout 120 --keep-alive 120 --max-requests 1000 --log-level info

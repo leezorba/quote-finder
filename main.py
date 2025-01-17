@@ -1,31 +1,25 @@
 import os
 import time
+import uuid
 import json
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template
-from queue import Queue
-import uuid
-import threading
-
-from prompts import search_assistant_system_prompt
+from queue_utils import start_worker, job_queue, job_results
 from pinecones_utils_openai import query_openai_paragraphs
 from openai_utils import get_chat_completion
+from prompts import search_assistant_system_prompt
 
 app = Flask(__name__)
 app.config['TIMEOUT'] = 120
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
-# Global job queue and results storage
-job_queue = Queue()
-job_results = {}
-
 # Cache dictionary to store results with timestamps
 query_cache = {}
 CACHE_TIMEOUT = timedelta(minutes=30)
 
 def get_cached_query_results(query, top_k):
-    """Get cached results if they exist and haven't expired"""
+    """Retrieve cached results if they exist and haven't expired."""
     cache_key = f"{query}_{top_k}"
     if cache_key in query_cache:
         timestamp, results = query_cache[cache_key]
@@ -35,48 +29,30 @@ def get_cached_query_results(query, top_k):
     return None
 
 def cache_query_results(query, top_k, results):
-    """Cache the query results with current timestamp"""
+    """Cache the query results with a timestamp."""
     cache_key = f"{query}_{top_k}"
     query_cache[cache_key] = (datetime.now(), results)
     print(f"[INFO] Cached results for query: {query}")
 
 def verify_response(quotes, original_paragraphs):
-    """
-    Verifies the GPT output by matching 'paragraph_text' to the metadata
-    in 'original_paragraphs'. If found, it reconstructs a verified quote object
-    using the original metadata. If not found, logs an unverified quote.
-    """
+    """Verify GPT output by matching paragraph text to metadata."""
     verified_quotes = []
     original_dict = {}
 
-    # 1) Build dictionary of original paragraphs to support flexible matching
+    # Build a dictionary of original paragraphs for matching
     for p in original_paragraphs:
         text = p['metadata']['paragraph_text']
-        # Store both full text and normalized versions
-        original_dict[text] = p['metadata']
         original_dict[text.strip()] = p['metadata']
-
-        # Also store a version with punctuation stripped (optional)
         clean_text = ''.join(c for c in text if c.isalnum() or c.isspace()).strip()
         original_dict[clean_text] = p['metadata']
 
-    # 2) Attempt to verify each returned quote
     for quote in quotes:
-        quote_text = quote.get('paragraph_text', '')
-        found = False
+        quote_text = quote.get('paragraph_text', '').strip()
+        clean_quote = ''.join(c for c in quote_text if c.isalnum() or c.isspace()).strip()
+        original_meta = original_dict.get(quote_text) or original_dict.get(clean_quote)
 
-        if quote_text in original_dict:
-            found = True
-            original_meta = original_dict[quote_text]
-        else:
-            # Try normalized
-            clean_quote = ''.join(c for c in quote_text if c.isalnum() or c.isspace()).strip()
-            if clean_quote in original_dict:
-                found = True
-                original_meta = original_dict[clean_quote]
-
-        if found:
-            verified_quote = {
+        if original_meta:
+            verified_quotes.append({
                 'speaker': original_meta['speaker'],
                 'role': original_meta['role'],
                 'title': original_meta['title'],
@@ -84,18 +60,17 @@ def verify_response(quotes, original_paragraphs):
                 'paragraph_deep_link': original_meta['paragraph_deep_link'],
                 'paragraph_text': original_meta['paragraph_text'],
                 'start_time': int(original_meta['start_time']),
-                'end_time': int(original_meta['end_time'])
-            }
-            verified_quotes.append(verified_quote)
-            print(f"✓ Verified quote: {verified_quote['paragraph_text'][:50]}...")
+                'end_time': int(original_meta['end_time']),
+            })
+            print(f"✓ Verified quote: {quote_text[:50]}...")
         else:
             print(f"✗ Unverified quote: {quote_text[:50]}...")
 
     return verified_quotes
 
 def process_query(user_message):
-    """Process a single query and return verified quotes"""
-    top_k = 10  # Reduced from 15
+    """Process a single query and return verified quotes."""
+    top_k = 10
     relevant_paragraphs = query_openai_paragraphs(query=user_message, top_k=top_k)
     if not relevant_paragraphs:
         raise Exception('No relevant paragraphs found')
@@ -129,34 +104,12 @@ def process_query(user_message):
             if not isinstance(quotes, list):
                 raise ValueError("GPT output is not a JSON array")
             verified_quotes = verify_response(quotes, relevant_paragraphs)
-            if not verified_quotes:
-                raise Exception('No verified quotes found')
-            return verified_quotes
+            if verified_quotes:
+                return verified_quotes
         except Exception as e:
             if attempt == max_attempts - 1:
                 raise
             time.sleep(1)
-            continue
-
-# Start background worker
-def process_jobs():
-    """Background worker to process jobs"""
-    while True:
-        job_id, user_message = job_queue.get()
-        try:
-            result = process_query(user_message)
-            job_results[job_id] = {
-                'status': 'complete', 
-                'data': result,
-                'query': user_message  # Store query for caching
-            }
-        except Exception as e:
-            job_results[job_id] = {'status': 'error', 'error': str(e)}
-        job_queue.task_done()
-
-# Start the background worker thread
-worker = threading.Thread(target=process_jobs, daemon=True)
-worker.start()
 
 @app.route('/')
 def index():
@@ -165,7 +118,7 @@ def index():
 
 @app.route('/query', methods=['POST'])
 def ask():
-    """Submit a query to the job queue"""
+    """Submit a query to the job queue."""
     data = request.get_json()
     user_message = (data.get('question') or "").strip()
 
@@ -179,39 +132,31 @@ def ask():
     if cached_results:
         return jsonify({'response_text': cached_results})
 
-    # Create new job with the query stored
     job_id = str(uuid.uuid4())
-    job_results[job_id] = {
-        'status': 'pending',
-        'query': user_message  # Store the query with the job
-    }
+    job_results[job_id] = {'status': 'pending'}
     job_queue.put((job_id, user_message))
 
     return jsonify({'job_id': job_id})
 
 @app.route('/status/<job_id>', methods=['GET'])
 def job_status(job_id):
-    """Check job status and return results if complete"""
+    """Check the status of a job and return results if complete."""
     if job_id not in job_results:
         return jsonify({'error': 'Job not found'}), 404
 
     result = job_results[job_id]
     if result['status'] == 'complete':
-        # Get the data and query
-        data = result['data']
-        user_message = result.get('query', '')
-        if user_message:  # Only cache if we have the query
-            cache_query_results(user_message, 10, data)
-        # Clean up job data
-        del job_results[job_id]
-        return jsonify({'status': 'complete', 'response_text': data})
+        # Cache the completed result
+        cache_query_results(result.get('query', ''), 10, result['data'])
+        return jsonify({'status': 'complete', 'response_text': result['data']})
     elif result['status'] == 'error':
-        error = result['error']
-        del job_results[job_id]
-        return jsonify({'status': 'error', 'error': error})
-    else:
-        return jsonify({'status': 'pending'})
+        return jsonify({'status': 'error', 'error': result['error']})
+    return jsonify({'status': 'pending'})
 
 if __name__ == '__main__':
+    # Start the background worker thread
+    start_worker(process_query)
+
+    # Run the Flask app
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port, debug=True)
