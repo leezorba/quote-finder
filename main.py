@@ -10,7 +10,7 @@ from openai_utils import get_chat_completion
 from prompts import search_assistant_system_prompt
 
 app = Flask(__name__)
-app.config['TIMEOUT'] = 120
+app.config['TIMEOUT'] = 300  # Increased timeout for long queries
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
@@ -71,28 +71,29 @@ def verify_response(quotes, original_paragraphs):
 def process_query(user_message):
     """Process a single query and return verified quotes."""
     top_k = 10
-    relevant_paragraphs = query_openai_paragraphs(query=user_message, top_k=top_k)
-    if not relevant_paragraphs:
-        raise Exception('No relevant paragraphs found')
+    retries = 3
 
-    user_prompt = (
-        "Relevant paragraphs with metadata:\n\n" +
-        "\n\n".join([
-            f"Speaker: {p['metadata'].get('speaker', '')}\n"
-            f"Role: {p['metadata'].get('role', '')}\n"
-            f"Title: {p['metadata'].get('title', '')}\n"
-            f"Link: {p['metadata'].get('youtube_link', '')}\n"
-            f"DeepLink: {p['metadata'].get('paragraph_deep_link', '')}\n"
-            f"Text: {p['paragraph_text']}"
-            for p in relevant_paragraphs
-        ]) +
-        f"\n\nUser question: {user_message}\n\n"
-        "Return ONLY a raw JSON array with exact quotes and metadata - no markdown or code blocks."
-    )
-
-    max_attempts = 3
-    for attempt in range(max_attempts):
+    for attempt in range(retries):
         try:
+            relevant_paragraphs = query_openai_paragraphs(query=user_message, top_k=top_k)
+            if not relevant_paragraphs:
+                raise Exception('No relevant paragraphs found')
+
+            user_prompt = (
+                "Relevant paragraphs with metadata:\n\n" +
+                "\n\n".join([
+                    f"Speaker: {p['metadata'].get('speaker', '')}\n"
+                    f"Role: {p['metadata'].get('role', '')}\n"
+                    f"Title: {p['metadata'].get('title', '')}\n"
+                    f"Link: {p['metadata'].get('youtube_link', '')}\n"
+                    f"DeepLink: {p['metadata'].get('paragraph_deep_link', '')}\n"
+                    f"Text: {p['paragraph_text']}"
+                    for p in relevant_paragraphs
+                ]) +
+                f"\n\nUser question: {user_message}\n\n"
+                "Return ONLY a raw JSON array with exact quotes and metadata - no markdown or code blocks."
+            )
+
             response_text = get_chat_completion(
                 system_prompt=search_assistant_system_prompt,
                 user_prompt=user_prompt,
@@ -103,13 +104,15 @@ def process_query(user_message):
             quotes = json.loads(response_text)
             if not isinstance(quotes, list):
                 raise ValueError("GPT output is not a JSON array")
+            
             verified_quotes = verify_response(quotes, relevant_paragraphs)
             if verified_quotes:
                 return verified_quotes
         except Exception as e:
-            if attempt == max_attempts - 1:
+            print(f"[ERROR] Attempt {attempt + 1} failed: {e}")
+            if attempt == retries - 1:
                 raise
-            time.sleep(1)
+            time.sleep(2)
 
 @app.route('/')
 def index():

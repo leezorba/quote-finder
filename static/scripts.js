@@ -75,16 +75,32 @@ function handleSearch(event) {
     responseContainer: document.getElementById("responseContainer"),
   };
 
+  if (
+    !elements.submitButton ||
+    !elements.loadingIndicator ||
+    !elements.responseContainer
+  ) {
+    console.error("One or more elements are missing:", elements);
+    return;
+  }
+
   setLoadingState(true, elements);
   hideResults();
 
   submitQuery();
 }
 
+function setLoadingState(isLoading, elements) {
+  if (elements.submitButton) elements.submitButton.disabled = isLoading;
+  if (elements.loadingIndicator) {
+    elements.loadingIndicator.style.display = isLoading ? "flex" : "none";
+  }
+}
+
 function submitQuery() {
-  const input = document.querySelector("#search-input");
+  const input = document.querySelector("#question");
   const loadingSpinner = document.querySelector("#loading-spinner");
-  const resultsContainer = document.querySelector("#results-container");
+  const resultsContainer = document.querySelector("#responseContainer");
 
   if (!input.value.trim()) {
     alert("Please enter a question");
@@ -114,11 +130,11 @@ function submitQuery() {
     });
 }
 
-function pollJobStatus(jobId, retries = 10) {
+function pollJobStatus(jobId, retries = 30) {
+  const pollingInterval = 2000; // 2 seconds
   const loadingSpinner = document.querySelector("#loading-spinner");
-  const resultsContainer = document.querySelector("#results-container");
+  const resultsContainer = document.querySelector("#responseContainer");
 
-  // Add a progress message
   if (!document.querySelector("#progress-message")) {
     resultsContainer.innerHTML =
       '<p id="progress-message">Processing query...</p>';
@@ -131,7 +147,7 @@ function pollJobStatus(jobId, retries = 10) {
         document.querySelector("#progress-message").textContent =
           "Searching through conference talks...";
         if (retries > 0) {
-          setTimeout(() => pollJobStatus(jobId, retries - 1), 1000);
+          setTimeout(() => pollJobStatus(jobId, retries - 1), pollingInterval);
         } else {
           throw new Error("The query took too long. Please try again later.");
         }
@@ -150,36 +166,118 @@ function pollJobStatus(jobId, retries = 10) {
     });
 }
 
-function showError(error) {
+// Display Search Results
+function displayResults(responseText) {
+  try {
+    // Parse responseText into allQuotes
+    if (typeof responseText === "string") {
+      allQuotes = JSON.parse(responseText);
+    } else {
+      allQuotes = responseText;
+    }
+
+    displayedCount = Math.min(5, allQuotes.length);
+
+    // Hide loadingIndicator once results are available
+    document.getElementById("loadingIndicator").style.display = "none";
+
+    // Render quotes or show "No Results"
+    if (allQuotes.length > 0) {
+      renderQuotes();
+      showActionButtons();
+    } else {
+      showNoResultsMessage();
+    }
+  } catch (error) {
+    console.error("Error parsing or displaying results:", error);
+    showError("Unable to display results. Please try again.");
+  }
+}
+
+// Quote Rendering
+function renderQuotes() {
   const container = document.getElementById("responseContainer");
+  container.innerHTML = allQuotes
+    .slice(0, displayedCount)
+    .map((quote) => validateAndRenderQuote(quote))
+    .join("");
+
   container.style.display = "block";
-  container.innerHTML = `
-    <div class="quote-card error">
-      <p>${error}</p>
+}
+
+function validateAndRenderQuote(quote) {
+  if (
+    !quote.speaker ||
+    !quote.paragraph_text ||
+    !quote.paragraph_deep_link ||
+    !quote.title
+  ) {
+    console.error("Invalid quote data", quote);
+    return `<div class="error">Invalid quote data</div>`;
+  }
+  return generateQuoteCard(quote);
+}
+
+function generateQuoteCard(quote) {
+  const videoId = getYouTubeVideoId(quote.youtube_link);
+  const startTime = parseInt(quote.start_time) || 0;
+  const session = getSessionInfo(quote.paragraph_deep_link);
+
+  return `
+    <div class="quote-card">
+      <div class="quote-header">
+        <h3>${quote.speaker}</h3>
+        <p>${quote.role || ""}</p>
+      </div>
+      <div class="quote-metadata">
+        <p><strong>Title:</strong> ${quote.title}</p>
+        <p><strong>Session:</strong> ${session}</p>
+      </div>
+      <p class="quote-text">${quote.paragraph_text}</p>
+      <div class="quote-actions">
+        <button onclick="window.open('${
+          quote.paragraph_deep_link
+        }', '_blank')" class="secondary-button">
+          Read in Context
+        </button>
+        ${
+          videoId
+            ? `<button onclick="replayQuote(${
+                quote.index
+              }, ${startTime})" class="secondary-button">
+                Play Quote (${formatTime(startTime)})
+              </button>`
+            : ""
+        }
+      </div>
+      ${videoId ? generateVideoEmbed(videoId, startTime) : ""}
     </div>
   `;
 }
 
-function handleSearchResponse(response) {
-  if (response.error) throw new Error(response.error);
+function generateVideoEmbed(videoId, startTime) {
+  return `
+    <div class="video-container">
+      <iframe src="https://www.youtube.com/embed/${videoId}?start=${startTime}&enablejsapi=1"
+              allowfullscreen></iframe>
+    </div>
+  `;
+}
 
-  allQuotes = response.response_text;
-  displayedCount = Math.min(5, allQuotes.length);
+function showNoResultsMessage() {
+  const container = document.getElementById("responseContainer");
+  container.innerHTML = `<p>No quotes found for the given query.</p>`;
+  container.style.display = "block";
+}
 
-  if (allQuotes.length > 0) {
-    renderQuotes();
-    showActionButtons();
-  } else {
-    showNoResultsMessage();
-  }
+// Error Handling
+function showError(error) {
+  const container = document.getElementById("responseContainer");
+  container.style.display = "block";
+  container.innerHTML = `<p class="error">${error}</p>`;
 }
 
 // UI State Management
-function setLoadingState(isLoading, elements) {
-  elements.submitButton.disabled = isLoading;
-  elements.loadingIndicator.style.display = isLoading ? "flex" : "none";
-}
-
 function hideResults() {
   document.getElementById("responseContainer").style.display = "none";
   hideActionButtons();
@@ -198,69 +296,6 @@ function showActionButtons() {
 
 function hideLoadMoreButton() {
   document.getElementById("loadMoreButton").style.display = "none";
-}
-
-// Quote Rendering
-function renderQuotes() {
-  const container = document.getElementById("responseContainer");
-  container.innerHTML = allQuotes
-    .slice(0, displayedCount)
-    .map((quote, index) => {
-      const videoId = getYouTubeVideoId(quote.youtube_link);
-      const startTime = parseInt(quote.start_time) || 0;
-      return generateQuoteCard(quote, videoId, startTime, index);
-    })
-    .join("");
-
-  container.style.display = "block";
-  initYouTubeAPI();
-}
-
-function generateQuoteCard(quote, videoId, startTime, index) {
-  const session = getSessionInfo(quote.paragraph_deep_link);
-  const videoEmbed = videoId
-    ? generateVideoEmbed(videoId, startTime, index)
-    : "";
-
-  return `
-   <div class="quote-card">
-     <div class="quote-header">
-       <h3>${quote.speaker}</h3>
-       <p>${quote.role}</p>
-     </div>
-     <div class="quote-metadata">
-       <p><strong>Title:</strong> ${quote.title}</p>
-       <p><strong>Session:</strong> ${session}</p>
-     </div>
-     <p class="quote-text">${quote.paragraph_text}</p>
-     <div class="quote-actions">
-       <button onclick="window.open('${quote.paragraph_deep_link}', '_blank')"
-               class="secondary-button">Read in Context</button>
-       ${
-         videoId
-           ? `
-         <button onclick="replayQuote(${index}, ${startTime})"
-                 class="secondary-button">Play Quote (${formatTime(
-                   startTime
-                 )})</button>
-       `
-           : ""
-       }
-     </div>
-     ${videoEmbed}
-   </div>
- `;
-}
-
-function generateVideoEmbed(videoId, startTime, index) {
-  return `
-   <div class="video-container">
-     <iframe id="video-${index}"
-             src="https://www.youtube.com/embed/${videoId}?start=${startTime}&enablejsapi=1"
-             allowfullscreen>
-     </iframe>
-   </div>
- `;
 }
 
 // YouTube Integration
@@ -295,7 +330,7 @@ function replayQuote(index, startTime) {
   }
 }
 
-// Download Functionality
+// Download Results
 function downloadResults(quotes) {
   const html = generateDownloadHTML(quotes);
   const blob = new Blob([html], { type: "text/html" });
@@ -311,44 +346,44 @@ function downloadResults(quotes) {
 
 function generateDownloadHTML(quotes) {
   return `
-   <!DOCTYPE html>
-   <html>
-     <head>
-       <meta charset="utf-8">
-       <title>Conference Quotes</title>
-       <style>
-         body { 
-           font-family: system-ui, sans-serif; 
-           line-height: 1.5; 
-           max-width: 800px;
-           margin: 2rem auto;
-           padding: 0 1rem;
-         }
-         .quote {
-           margin-bottom: 2rem;
-           padding: 1rem;
-           border: 1px solid #e2e8f0;
-           border-radius: 8px;
-         }
-         .metadata { color: #64748b; }
-         .links { 
-           margin-top: 1rem;
-           display: flex;
-           gap: 1rem;
-         }
-         .links a { 
-           color: #2563eb;
-           text-decoration: none;
-         }
-         .links a:hover { text-decoration: underline; }
-       </style>
-     </head>
-     <body>
-       <h1>Conference Quotes</h1>
-       ${quotes.map((quote) => generateDownloadQuoteHTML(quote)).join("")}
-     </body>
-   </html>
- `;
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Conference Quotes</title>
+        <style>
+          body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+          }
+          .quote {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+          }
+          .metadata { color: #64748b; }
+          .links {
+            margin-top: 1rem;
+            display: flex;
+            gap: 1rem;
+          }
+          .links a {
+            color: #2563eb;
+            text-decoration: none;
+          }
+          .links a:hover { text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+        <h1>Conference Quotes</h1>
+        ${quotes.map((quote) => generateDownloadQuoteHTML(quote)).join("")}
+      </body>
+    </html>
+  `;
 }
 
 function generateDownloadQuoteHTML(quote) {
@@ -357,27 +392,26 @@ function generateDownloadQuoteHTML(quote) {
   const session = getSessionInfo(quote.paragraph_deep_link);
 
   return `
-   <div class="quote">
-     <h2>${quote.speaker}</h2>
-     <div class="metadata">
-       <p>${quote.role}</p>
-       <p><strong>Title:</strong> ${quote.title}</p>
-       <p><strong>Session:</strong> ${session}</p>
-     </div>
-     <p>${quote.paragraph_text}</p>
-     <div class="links">
-       <a href="${
-         quote.paragraph_deep_link
-       }" target="_blank">Read in Context</a>
-       ${
-         videoId
-           ? `
-         <a href="https://youtube.com/watch?v=${videoId}&t=${startTime}s" 
-            target="_blank">Watch on YouTube (${formatTime(startTime)})</a>
-       `
-           : ""
-       }
-     </div>
-   </div>
- `;
+    <div class="quote">
+      <h2>${quote.speaker}</h2>
+      <div class="metadata">
+        <p>${quote.role}</p>
+        <p><strong>Title:</strong> ${quote.title}</p>
+        <p><strong>Session:</strong> ${session}</p>
+      </div>
+      <p>${quote.paragraph_text}</p>
+      <div class="links">
+        <a href="${
+          quote.paragraph_deep_link
+        }" target="_blank">Read in Context</a>
+        ${
+          videoId
+            ? `<a href="https://youtube.com/watch?v=${videoId}&t=${startTime}s" target="_blank">
+                Watch on YouTube (${formatTime(startTime)})
+              </a>`
+            : ""
+        }
+      </div>
+    </div>
+  `;
 }

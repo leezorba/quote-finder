@@ -101,33 +101,6 @@ input[type="text"]:focus {
   border-color: var(--primary-color);
 }
 
-.select-group {
-  margin-bottom: 1.5rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-color);
-}
-
-.form-select {
-  width: 100%;
-  padding: 0.875rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background-color: var(--card-background);
-  color: var(--text-color);
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.select-description {
-  margin-top: 0.5rem;
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-
 .primary-button {
   width: 100%;
   padding: 0.875rem;
@@ -146,7 +119,7 @@ label {
 }
 
 .results-actions {
-  display: none;
+  display: none; /* Hidden by default */
   gap: 1rem;
   margin-top: 2rem;
 }
@@ -169,7 +142,7 @@ label {
 }
 
 .loading-indicator {
-  display: none;
+  display: none; /* Hidden by default */
   align-items: center;
   justify-content: center;
   gap: 1rem;
@@ -199,9 +172,15 @@ label {
   margin-bottom: 1.5rem;
 }
 
+.error {
+  color: var(--error-color);
+  font-weight: bold;
+  text-align: center;
+}
+
 .video-container {
   position: relative;
-  padding-bottom: 56.25%;
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
   height: 0;
   margin-top: 1rem;
 }

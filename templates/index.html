@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>General Conference Search</title>
+    <title>General Conference Quote Search</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='styles.css') }}"
@@ -11,10 +11,12 @@
   </head>
   <body>
     <div class="container">
+      <!-- Theme Toggle -->
       <div class="theme-toggle">
         <button id="toggleDarkMode">Switch to Dark Mode</button>
       </div>
 
+      <!-- Search Section -->
       <div class="search-container">
         <h1>General Conference Quote Search</h1>
         <form id="searchForm">
@@ -31,22 +33,33 @@
               <span class="search-icon">🔍</span>
             </div>
           </div>
-
           <button type="submit" id="submitButton" class="primary-button">
             <span class="button-content">Search Conference Talks</span>
-            <div class="button-loader"></div>
           </button>
         </form>
 
-        <div id="loadingIndicator" class="loading-indicator">
-          <div class="loading-spinner"></div>
+        <!-- Loading Indicator -->
+        <div
+          id="loadingIndicator"
+          class="loading-indicator"
+          style="display: none"
+        >
+          <div id="loading-spinner" class="loading-spinner"></div>
           <span>Searching conference talks...</span>
         </div>
       </div>
 
+      <!-- Results Section -->
       <div id="resultsSection">
-        <div id="responseContainer" class="results-container"></div>
-        <div class="results-actions">
+        <!-- Response Container -->
+        <div
+          id="responseContainer"
+          class="results-container"
+          aria-live="polite"
+        ></div>
+
+        <!-- Results Actions -->
+        <div class="results-actions" style="display: none">
           <button id="loadMoreButton" class="secondary-button">
             Load More Results
           </button>
@@ -57,6 +70,7 @@
       </div>
     </div>
 
+    <!-- JavaScript -->
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
   </body>
 </html>
