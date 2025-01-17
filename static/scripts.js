@@ -95,6 +95,10 @@ function setLoadingState(isLoading, elements) {
   if (elements.loadingIndicator) {
     elements.loadingIndicator.style.display = isLoading ? "flex" : "none";
   }
+  if (!isLoading) {
+    // Ensure the spinner is completely hidden after the operation
+    elements.loadingIndicator.style.opacity = 0;
+  }
 }
 
 function submitQuery() {
@@ -105,9 +109,10 @@ function submitQuery() {
     responseContainer: document.getElementById("responseContainer"),
   };
 
+  // Input Validation
   if (!input.value.trim()) {
-    alert("Please enter a question");
-    setLoadingState(false, elements); // Ensure loading state is reset
+    alert("Please enter a valid question");
+    setLoadingState(false, elements); // Reset spinner
     return;
   }
 
@@ -131,11 +136,11 @@ function submitQuery() {
     })
     .catch((error) => {
       console.error("Error:", error.message);
-      elements.responseContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+      elements.responseContainer.innerHTML = `
+        <p class="error">Error: ${error.message}. Please try again later.</p>`;
       setLoadingState(false, elements); // Reset loading state after error
     });
 }
-
 function pollJobStatus(jobId, elements, retries = 30) {
   const pollingInterval = 2000; // 2 seconds
 
@@ -165,7 +170,8 @@ function pollJobStatus(jobId, elements, retries = 30) {
     })
     .catch((error) => {
       console.error("Polling error:", error.message);
-      elements.responseContainer.innerHTML = `<p class="error">${error.message}</p>`;
+      elements.responseContainer.innerHTML = `
+      <p class="error">Error: ${error.message}. Please try again later.</p>`;
       setLoadingState(false, elements); // Reset loading state after error
     });
 }

@@ -1,3 +1,4 @@
+/* General Variables */
 :root {
   --primary-color: #2563eb;
   --secondary-color: #1d4ed8;
@@ -19,6 +20,7 @@ body.dark-mode {
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+/* Body Styling */
 body {
   font-family: system-ui, -apple-system, sans-serif;
   margin: 0;
@@ -29,25 +31,29 @@ body {
   transition: background-color 0.3s, color 0.3s;
 }
 
+/* Container */
 .container {
   max-width: 800px;
   margin: 0 auto;
   padding: 0 20px;
 }
 
+/* Theme Toggle */
 .theme-toggle {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 20px;
 }
 
+/* Subtitle */
 .subtitle {
-  text-align: center; /* Center the text */
-  font-size: 0.875rem; /* Slightly smaller font size */
-  color: var(--text-muted); /* Muted color */
-  margin-top: 1rem; /* Space above the subtitle */
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
 }
 
+/* Toggle Button */
 #toggleDarkMode {
   padding: 0.75rem 1.5rem;
   background-color: var(--primary-color);
@@ -63,24 +69,21 @@ body {
   background-color: var(--secondary-color);
 }
 
+/* Search Container */
 .search-container {
   background-color: var(--card-background);
   padding: 2rem;
   border-radius: 12px;
   box-shadow: var(--shadow);
   margin-bottom: 2rem;
-  box-sizing: border-box;
-  width: 100%;
 }
 
 .search-input-group {
   margin-bottom: 1.5rem;
-  width: 100%;
 }
 
 .search-input-wrapper {
   position: relative;
-  width: 100%;
 }
 
 .search-icon {
@@ -97,9 +100,8 @@ input[type="text"] {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 1rem;
-  color: var(--text-color);
   background-color: var(--card-background);
-  transition: border-color 0.2s;
+  color: var(--text-color);
   box-sizing: border-box;
 }
 
@@ -108,6 +110,7 @@ input[type="text"]:focus {
   border-color: var(--primary-color);
 }
 
+/* Buttons */
 .primary-button {
   width: 100%;
   padding: 0.875rem;
@@ -116,7 +119,6 @@ input[type="text"]:focus {
   border: none;
   border-radius: 8px;
   font-size: 1rem;
-  font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s;
 }
@@ -125,20 +127,13 @@ input[type="text"]:focus {
   background-color: var(--secondary-color);
 }
 
-.results-actions {
-  display: none; /* Hidden by default */
-  gap: 1rem;
-  margin-top: 2rem;
-}
-
 .secondary-button {
   padding: 0.75rem 1.5rem;
-  background-color: transparent;
-  color: var(--primary-color);
   border: 1px solid var(--primary-color);
   border-radius: 8px;
   font-size: 0.875rem;
-  font-weight: 500;
+  color: var(--primary-color);
+  background-color: transparent;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -148,14 +143,32 @@ input[type="text"]:focus {
   color: white;
 }
 
-.loading-indicator {
-  display: none; /* Hidden by default */
-  align-items: center;
+/* Results Actions */
+.results-actions {
+  display: flex;
   justify-content: center;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  gap: 1.5rem;
+  margin-top: 2rem;
 }
 
+/* Loading Indicator */
+.loading-indicator {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: var(--card-background);
+  padding: 1rem;
+  border-radius: 8px;
+  z-index: 1000;
+  box-shadow: var(--shadow);
+}
+
+/* Loading Spinner */
 .loading-spinner {
   width: 24px;
   height: 24px;
@@ -171,6 +184,7 @@ input[type="text"]:focus {
   }
 }
 
+/* Quote Card */
 .quote-card {
   background-color: var(--card-background);
   padding: 1.5rem;
@@ -179,17 +193,49 @@ input[type="text"]:focus {
   margin-bottom: 1.5rem;
 }
 
-.error {
-  color: var(--error-color);
-  font-weight: bold;
-  text-align: center;
+.quote-header {
+  margin-bottom: 1rem;
+}
+
+.quote-header h3 {
+  margin: 0;
+  color: var(--text-color);
+}
+
+.quote-header p {
+  margin: 0.5rem 0 0;
+  color: var(--text-muted);
+}
+
+.quote-metadata {
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+}
+
+.quote-text {
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.quote-actions {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.quote-actions button {
+  flex: 1;
+  min-width: 200px;
+  max-width: 300px;
 }
 
 .video-container {
+  margin-top: 1.5rem;
+  padding-bottom: 56.25%;
   position: relative;
-  padding-bottom: 56.25%; /* 16:9 aspect ratio */
   height: 0;
-  margin-top: 1rem;
+  clear: both;
 }
 
 .video-container iframe {
@@ -202,25 +248,48 @@ input[type="text"]:focus {
   border-radius: 8px;
 }
 
+/* Error States */
+.error {
+  color: var(--error-color);
+  padding: 1rem;
+  border-radius: 8px;
+  background-color: var(--card-background);
+  margin: 1rem 0;
+}
+
+/* Mobile Adjustments */
 @media (max-width: 640px) {
+  /* Other mobile styles remain the same */
   body {
     padding: 16px;
   }
 
-  .container {
-    padding: 0;
-  }
-
-  .search-container,
-  .quote-card {
+  .search-container {
     padding: 1rem;
   }
 
   .results-actions {
     flex-direction: column;
+    gap: 1rem;
   }
 
   .secondary-button {
     width: 100%;
+  }
+
+  .loading-indicator {
+    top: 65%;
+    width: 80%;
+    text-align: center;
+  }
+
+  .quote-actions {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .quote-actions button {
+    width: 100%;
+    max-width: none;
   }
 }
