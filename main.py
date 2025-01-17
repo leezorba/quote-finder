@@ -145,6 +145,9 @@ def ask():
 
     return jsonify({'job_id': job_id})
 
+# Start the background worker thread
+start_worker(process_query)
+
 @app.route('/status/<job_id>', methods=['GET'])
 def job_status(job_id):
     """Check the status of a job and return results if complete."""
@@ -157,9 +160,6 @@ def job_status(job_id):
     elif result['status'] == 'error':
         return jsonify({'status': 'error', 'error': result['error']})
     return jsonify({'status': 'pending'})
-
-# Start the background worker thread
-start_worker(process_query)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
