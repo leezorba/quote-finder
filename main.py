@@ -1,42 +1,10 @@
 import os
 import json
-import uuid
 from datetime import datetime, timedelta
-from threading import Thread
-from queue import Queue
 from flask import Flask, request, jsonify, render_template
 from pinecones_utils import query_openai_paragraphs
 from openai_utils import get_chat_completion
 from prompts import search_assistant_system_prompt
-
-# Initialize global job queue and results
-job_queue = Queue()
-job_results = {}
-
-# Process jobs in background
-def process_jobs():
-    while True:
-        try:
-            job_id, user_message = job_queue.get()
-            try:
-                result = process_query(user_message)
-                job_results[job_id] = {
-                    'status': 'complete',
-                    'data': result
-                }
-            except Exception as e:
-                print(f"Error processing job {job_id}: {str(e)}")
-                job_results[job_id] = {
-                    'status': 'error',
-                    'error': str(e)
-                }
-            job_queue.task_done()
-        except Exception as e:
-            print(f"Error in process_jobs: {str(e)}")
-
-# Start worker thread
-worker_thread = Thread(target=process_jobs, daemon=True)
-worker_thread.start()
 
 app = Flask(__name__)
 app.config['TIMEOUT'] = 300
@@ -157,7 +125,7 @@ def index():
 
 @app.route('/query', methods=['POST'])
 def ask():
-    """Submit a query to the job queue."""
+    """Process query and return results directly."""
     data = request.get_json()
     user_message = (data.get('question') or "").strip()
 
@@ -166,31 +134,12 @@ def ask():
 
     print(f"\n[{datetime.now()}] Query: {user_message}")
 
-    job_id = str(uuid.uuid4())
-    job_results[job_id] = {'status': 'pending'}
-    job_queue.put((job_id, user_message))
-
-    return jsonify({'job_id': job_id})
-
-@app.route('/status/<job_id>', methods=['GET'])
-def job_status(job_id):
-    """Check the status of a job and return results if complete."""
-    if job_id not in job_results:
-        return jsonify({'error': 'Job not found'}), 404
-
-    result = job_results[job_id]
-    print(f"Status for job {job_id}: {result['status']}")  # Debug logging
-    
-    if result['status'] == 'complete':
-        return jsonify({'status': 'complete', 'response_text': result['data']})
-    elif result['status'] == 'error':
-        return jsonify({'status': 'error', 'error': result['error']})
-    return jsonify({'status': 'pending'})
-
-@app.before_serving
-def clear_stale_jobs():
-    """Clear stale jobs before serving requests."""
-    job_results.clear()
+    try:
+        results = process_query(user_message)
+        return jsonify({'response_text': results})
+    except Exception as e:
+        print(f"Error processing query: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

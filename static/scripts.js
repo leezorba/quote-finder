@@ -124,6 +124,10 @@ async function submitQuery() {
       body: JSON.stringify({ question: input.value.trim() }),
     });
 
+    if (!response.ok) {
+      throw new Error(`Server error ${response.status}`);
+    }
+
     const data = await response.json();
     console.log("Query response:", data);
 
@@ -131,10 +135,10 @@ async function submitQuery() {
       throw new Error(data.error);
     }
 
-    if (data.job_id) {
-      pollJobStatus(data.job_id, elements);
+    if (data.response_text) {
+      displayResults(data.response_text);
     } else {
-      throw new Error("Unexpected response format");
+      throw new Error("Invalid response format");
     }
   } catch (error) {
     console.error("Query error:", error);
@@ -192,31 +196,25 @@ function pollJobStatus(jobId, elements, maxAttempts = 60) {
 }
 
 // Display Search Results
-function displayResults(responseText) {
-  try {
-    // Parse responseText into allQuotes
-    if (typeof responseText === "string") {
-      allQuotes = JSON.parse(responseText);
-    } else {
-      allQuotes = responseText;
-    }
-
-    displayedCount = Math.min(5, allQuotes.length);
-
-    // Hide loadingIndicator once results are available
-    document.getElementById("loadingIndicator").style.display = "none";
-
-    // Render quotes or show "No Results"
-    if (allQuotes.length > 0) {
-      renderQuotes();
-      showActionButtons();
-    } else {
-      showNoResultsMessage();
-    }
-  } catch (error) {
-    console.error("Error parsing or displaying results:", error);
-    showError("Unable to display results. Please try again.");
+function displayResults(results) {
+  const container = document.getElementById("responseContainer");
+  if (!results || results.length === 0) {
+    container.innerHTML = "<p>No results found.</p>";
+    return;
   }
+
+  const list = document.createElement("ul");
+  results.forEach((item) => {
+    const listItem = document.createElement("li");
+    listItem.innerHTML = `
+      <strong>${item.speaker} (${item.role}):</strong> ${item.paragraph_text}<br>
+      <a href="${item.paragraph_deep_link}" target="_blank">View Full Paragraph</a>
+    `;
+    list.appendChild(listItem);
+  });
+
+  container.innerHTML = "";
+  container.appendChild(list);
 }
 
 // Quote Rendering
