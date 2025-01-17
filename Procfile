@@ -1,1 +1,1 @@
-web: gunicorn main:app --timeout 120 --keep-alive 120 --workers 2
+web: gunicorn main:app --timeout 300 --keep-alive 300 --workers 2 --log-level debug

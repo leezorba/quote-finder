@@ -5,14 +5,37 @@ import time
 import datetime
 import json
 from flask import Flask, request, jsonify, render_template
+from functools import lru_cache
+from datetime import datetime, timedelta
 
 from prompts import search_assistant_system_prompt
-# Only keep the OpenAI approach:
 from pinecones_utils_openai import query_openai_paragraphs
 from openai_utils import get_chat_completion
 
 app = Flask(__name__)
-app.config['TIMEOUT'] = 120
+app.config['TIMEOUT'] = 300  # Increased to 5 minutes
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
+
+# Cache dictionary to store results with timestamps
+query_cache = {}
+CACHE_TIMEOUT = timedelta(minutes=30)  # Cache expires after 30 minutes
+
+def get_cached_query_results(query, top_k):
+    """Get cached results if they exist and haven't expired"""
+    cache_key = f"{query}_{top_k}"
+    if cache_key in query_cache:
+        timestamp, results = query_cache[cache_key]
+        if datetime.now() - timestamp < CACHE_TIMEOUT:
+            print(f"[INFO] Cache hit for query: {query}")
+            return results
+    return None
+
+def cache_query_results(query, top_k, results):
+    """Cache the query results with current timestamp"""
+    cache_key = f"{query}_{top_k}"
+    query_cache[cache_key] = (datetime.now(), results)
+    print(f"[INFO] Cached results for query: {query}")
 
 def verify_response(quotes, original_paragraphs):
     """
@@ -20,7 +43,6 @@ def verify_response(quotes, original_paragraphs):
     in 'original_paragraphs'. If found, it reconstructs a verified quote object
     using the original metadata. If not found, logs an unverified quote.
     """
-
     verified_quotes = []
     original_dict = {}
 
@@ -57,7 +79,6 @@ def verify_response(quotes, original_paragraphs):
                 'title': original_meta['title'],
                 'youtube_link': original_meta['youtube_link'],
                 'paragraph_deep_link': original_meta['paragraph_deep_link'],
-                # Always use the original text from metadata
                 'paragraph_text': original_meta['paragraph_text'],
                 'start_time': int(original_meta['start_time']),
                 'end_time': int(original_meta['end_time'])
@@ -73,7 +94,8 @@ def verify_response(quotes, original_paragraphs):
 def after_request(response):
     response.headers["Proxy-Connection"] = "Keep-Alive"
     response.headers["Connection"] = "Keep-Alive"
-    response.headers["Keep-Alive"] = "timeout=120, max=1000"
+    response.headers["Keep-Alive"] = "timeout=300, max=1000"
+    response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
     return response
 
 @app.route('/')
@@ -93,7 +115,12 @@ def ask():
     print(f"\n[{datetime.datetime.now()}] Query: {user_message}")
     print("Using single enhanced search mode (embed3)")
 
-    # 1) Retrieve paragraphs using the OpenAI-based approach
+    # Check cache first
+    cached_results = get_cached_query_results(user_message, top_k=15)
+    if cached_results:
+        return jsonify({'response_text': cached_results})
+
+    # If not in cache, proceed with normal query
     try:
         top_k = 15  # You can adjust if you like
         relevant_paragraphs = query_openai_paragraphs(query=user_message, top_k=top_k)
@@ -142,7 +169,6 @@ def ask():
             except (json.JSONDecodeError, ValueError) as e:
                 print(f"[ERROR] GPT returned malformed JSON on attempt {attempt+1}: {str(e)}")
                 if attempt == max_attempts - 1:
-                    # Return 500 if final attempt still fails
                     return jsonify({
                         'error': (
                             "Sorry! We encountered an error. Please refresh the page and try again. "
@@ -159,6 +185,8 @@ def ask():
         if not verified_quotes:
             return jsonify({'error': 'No verified quotes found'}), 404
 
+        # Cache the results before returning
+        cache_query_results(user_message, top_k, verified_quotes)
         return jsonify({'response_text': verified_quotes})
 
     except Exception as e:
