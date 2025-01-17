@@ -151,46 +151,45 @@ function submitQuery() {
 
 function pollJobStatus(jobId, elements, retries = 60) {
   const pollingInterval = 2000; // 2 seconds
+  let attempts = 0;
 
   const poll = () => {
+    if (attempts >= retries) {
+      setLoadingState(false, elements);
+      elements.responseContainer.innerHTML = `
+        <p class="error">The query took too long. Please try again.</p>`;
+      return;
+    }
+
+    attempts++;
     fetch(`/status/${jobId}`)
       .then((response) => {
-        if (response.status === 404) {
-          throw new Error("Job not found. Please try again.");
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}`);
         }
         return response.json();
       })
       .then((data) => {
+        console.log(`Poll attempt ${attempts}, status:`, data); // Debug logging
         if (data.status === "pending") {
-          if (retries > 0) {
-            // keep polling until we run out of retries
-            setTimeout(() => {
-              retries--;
-              poll();
-            }, pollingInterval);
-          } else {
-            throw new Error("The query took too long. Please try again.");
-          }
-        } else if (data.status === "complete") {
-          if (data.response_text) {
-            displayResults(data.response_text);
-          }
+          setTimeout(poll, pollingInterval);
+        } else if (data.status === "complete" && data.response_text) {
+          displayResults(data.response_text);
           setLoadingState(false, elements);
         } else if (data.status === "error") {
           throw new Error(
-            data.error || "An error occurred processing your request."
+            data.error || "An error occurred processing your request"
           );
         }
       })
       .catch((error) => {
         console.error("Polling error:", error);
+        setLoadingState(false, elements);
         elements.responseContainer.innerHTML = `
           <p class="error">Error: ${error.message}. Please try again.</p>`;
-        setLoadingState(false, elements);
       });
   };
 
-  // Start polling immediately
   poll();
 }
 

@@ -13,7 +13,7 @@ app.config['TIMEOUT'] = 300
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
-# Cache dictionary to store results with timestamps
+# Cache setup
 query_cache = {}
 CACHE_TIMEOUT = timedelta(minutes=30)
 
@@ -38,7 +38,6 @@ def verify_response(quotes, original_paragraphs):
     verified_quotes = []
     original_dict = {}
 
-    # Build a dictionary of original paragraphs for matching
     for p in original_paragraphs:
         text = p['metadata']['paragraph_text']
         original_dict[text.strip()] = p['metadata']
@@ -74,7 +73,6 @@ def process_query(user_message):
 
     for attempt in range(retries):
         try:
-            # Check cache first
             cached_results = get_cached_query_results(user_message, top_k)
             if cached_results:
                 return cached_results
@@ -112,7 +110,6 @@ def process_query(user_message):
             
             verified_quotes = verify_response(quotes, relevant_paragraphs)
             if verified_quotes:
-                # Cache the results before returning
                 cache_query_results(user_message, top_k, verified_quotes)
                 return verified_quotes
 
@@ -122,6 +119,10 @@ def process_query(user_message):
                 raise
             
     return []
+
+# Initialize job queue after process_query is defined
+job_results.clear()  # Clear any stale results
+worker = start_worker(process_query)
 
 @app.route('/')
 def index():
@@ -145,9 +146,6 @@ def ask():
 
     return jsonify({'job_id': job_id})
 
-# Start the background worker thread
-start_worker(process_query)
-
 @app.route('/status/<job_id>', methods=['GET'])
 def job_status(job_id):
     """Check the status of a job and return results if complete."""
@@ -155,6 +153,8 @@ def job_status(job_id):
         return jsonify({'error': 'Job not found'}), 404
 
     result = job_results[job_id]
+    print(f"Status for job {job_id}: {result['status']}")  # Debug logging
+    
     if result['status'] == 'complete':
         return jsonify({'status': 'complete', 'response_text': result['data']})
     elif result['status'] == 'error':
