@@ -112,12 +112,13 @@ function submitQuery() {
   // Input Validation
   if (!input.value.trim()) {
     alert("Please enter a valid question");
-    setLoadingState(false, elements); // Reset spinner
+    setLoadingState(false, elements);
     return;
   }
 
-  elements.responseContainer.innerHTML = ""; // Clear previous results
-  setLoadingState(true, elements); // Show loading indicator
+  // Clear old results and show spinner
+  elements.responseContainer.innerHTML = "";
+  setLoadingState(true, elements);
 
   fetch("/query", {
     method: "POST",
@@ -126,53 +127,71 @@ function submitQuery() {
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) throw new Error(data.error);
-      if (data.response_text) {
-        displayResults(data.response_text);
+      // If server returned an immediate error
+      if (data.error) {
+        throw new Error(data.error);
       }
-      setLoadingState(false, elements); // Reset loading state after success
+      // If we got a job_id, poll the /status/<job_id> route
+      if (data.job_id) {
+        pollJobStatus(data.job_id, elements);
+      }
+      // Or if the server returned actual data directly (without queueing)
+      else if (data.response_text) {
+        displayResults(data.response_text);
+        setLoadingState(false, elements);
+      }
     })
     .catch((error) => {
       console.error("Error:", error.message);
       elements.responseContainer.innerHTML = `
         <p class="error">Error: ${error.message}. Please try again later.</p>`;
-      setLoadingState(false, elements); // Reset loading state after error
+      setLoadingState(false, elements);
     });
 }
 
-function pollJobStatus(jobId, elements, retries = 30) {
+function pollJobStatus(jobId, elements, retries = 60) {
   const pollingInterval = 2000; // 2 seconds
 
-  fetch(`/status/${jobId}`)
-    .then((response) => {
-      if (response.status === 404) {
-        throw new Error("Job not found or expired. Please try again.");
-      }
-      return response.json();
-    })
-    .then((data) => {
-      if (data.status === "pending") {
-        if (retries > 0) {
-          setTimeout(
-            () => pollJobStatus(jobId, elements, retries - 1),
-            pollingInterval
-          );
-        } else {
-          throw new Error("The query took too long. Please try again later.");
+  const poll = () => {
+    fetch(`/status/${jobId}`)
+      .then((response) => {
+        if (response.status === 404) {
+          throw new Error("Job not found. Please try again.");
         }
-      } else if (data.status === "complete") {
-        displayResults(data.response_text);
-        setLoadingState(false, elements); // Reset loading state after success
-      } else if (data.status === "error") {
-        throw new Error(data.error);
-      }
-    })
-    .catch((error) => {
-      console.error("Polling error:", error.message);
-      elements.responseContainer.innerHTML = `
-      <p class="error">Error: ${error.message}. Please try again later.</p>`;
-      setLoadingState(false, elements); // Reset loading state after error
-    });
+        return response.json();
+      })
+      .then((data) => {
+        if (data.status === "pending") {
+          if (retries > 0) {
+            // keep polling until we run out of retries
+            setTimeout(() => {
+              retries--;
+              poll();
+            }, pollingInterval);
+          } else {
+            throw new Error("The query took too long. Please try again.");
+          }
+        } else if (data.status === "complete") {
+          if (data.response_text) {
+            displayResults(data.response_text);
+          }
+          setLoadingState(false, elements);
+        } else if (data.status === "error") {
+          throw new Error(
+            data.error || "An error occurred processing your request."
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Polling error:", error);
+        elements.responseContainer.innerHTML = `
+          <p class="error">Error: ${error.message}. Please try again.</p>`;
+        setLoadingState(false, elements);
+      });
+  };
+
+  // Start polling immediately
+  poll();
 }
 
 // Display Search Results
