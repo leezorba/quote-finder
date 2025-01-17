@@ -7,6 +7,9 @@ from pinecone.grpc import PineconeGRPC as Pinecone
 from pinecone import ServerlessSpec
 from openai import OpenAI
 
+from dotenv import load_dotenv
+load_dotenv() 
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
