@@ -5,3 +5,4 @@ pinecone==5.4.2
 requests==2.32.3
 tiktoken==0.8.0
 protobuf==4.23.4
+googleapis-common-protos==1.59.0
