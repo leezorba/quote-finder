@@ -22,10 +22,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Environment setup
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Debugging statements
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "default_pinecone_key")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "default_openai_key")
 print(f"PINECONE_API_KEY: {PINECONE_API_KEY}")
 print(f"OPENAI_API_KEY: {OPENAI_API_KEY}")
 

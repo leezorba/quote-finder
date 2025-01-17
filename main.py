@@ -9,7 +9,7 @@ from pinecones_utils_openai import query_openai_paragraphs
 from openai_utils import get_chat_completion
 from prompts import search_assistant_system_prompt
 
-print(os.environ)  # Debug all environment variables
+print("ENVIRONMENT VARIABLES:", dict(os.environ))  # Debug all environment variables
 
 app = Flask(__name__)
 app.config['TIMEOUT'] = 300  # Increased timeout for long queries
