@@ -2,7 +2,6 @@
 
 import os
 import time
-import datetime
 import json
 from flask import Flask, request, jsonify, render_template
 from functools import lru_cache
@@ -112,7 +111,7 @@ def ask():
     if not user_message:
         return jsonify({'error': 'Question cannot be empty'}), 400
 
-    print(f"\n[{datetime.datetime.now()}] Query: {user_message}")
+    print(f"\n[{datetime.now()}] Query: {user_message}")
     print("Using single enhanced search mode (embed3)")
 
     # Check cache first
