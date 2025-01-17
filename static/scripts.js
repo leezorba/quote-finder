@@ -127,12 +127,10 @@ function submitQuery() {
     .then((response) => response.json())
     .then((data) => {
       if (data.error) throw new Error(data.error);
-      if (data.job_id) {
-        pollJobStatus(data.job_id, elements); // Poll the job status
-      } else if (data.response_text) {
+      if (data.response_text) {
         displayResults(data.response_text);
-        setLoadingState(false, elements); // Reset loading state after success
       }
+      setLoadingState(false, elements); // Reset loading state after success
     })
     .catch((error) => {
       console.error("Error:", error.message);
@@ -141,6 +139,7 @@ function submitQuery() {
       setLoadingState(false, elements); // Reset loading state after error
     });
 }
+
 function pollJobStatus(jobId, elements, retries = 30) {
   const pollingInterval = 2000; // 2 seconds
 
