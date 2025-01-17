@@ -2,11 +2,41 @@ import os
 import json
 import uuid
 from datetime import datetime, timedelta
+from threading import Thread
+from queue import Queue
 from flask import Flask, request, jsonify, render_template
-from queue_utils import start_worker, job_queue, job_results
 from pinecones_utils import query_openai_paragraphs
 from openai_utils import get_chat_completion
 from prompts import search_assistant_system_prompt
+
+# Initialize global job queue and results
+job_queue = Queue()
+job_results = {}
+
+# Process jobs in background
+def process_jobs():
+    while True:
+        try:
+            job_id, user_message = job_queue.get()
+            try:
+                result = process_query(user_message)
+                job_results[job_id] = {
+                    'status': 'complete',
+                    'data': result
+                }
+            except Exception as e:
+                print(f"Error processing job {job_id}: {str(e)}")
+                job_results[job_id] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+            job_queue.task_done()
+        except Exception as e:
+            print(f"Error in process_jobs: {str(e)}")
+
+# Start worker thread
+worker_thread = Thread(target=process_jobs, daemon=True)
+worker_thread.start()
 
 app = Flask(__name__)
 app.config['TIMEOUT'] = 300
@@ -120,10 +150,6 @@ def process_query(user_message):
             
     return []
 
-# Initialize job queue after process_query is defined
-job_results.clear()  # Clear any stale results
-worker = start_worker(process_query)
-
 @app.route('/')
 def index():
     """Render the main page."""
@@ -160,6 +186,11 @@ def job_status(job_id):
     elif result['status'] == 'error':
         return jsonify({'status': 'error', 'error': result['error']})
     return jsonify({'status': 'pending'})
+
+# Before first request, clear any stale results
+@app.before_first_request
+def clear_stale_jobs():
+    job_results.clear()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
