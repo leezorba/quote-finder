@@ -87,7 +87,18 @@ function handleSearch(event) {
   setLoadingState(true, elements);
   hideResults();
 
-  submitQuery();
+  // Get and validate input
+  const input = document.querySelector("#question");
+  const query = input.value.trim();
+
+  if (!query) {
+    alert("Please enter a question");
+    setLoadingState(false, elements);
+    return;
+  }
+
+  // Submit query without clearing the input field
+  submitQuery(query);
 }
 
 function setLoadingState(isLoading, elements) {
@@ -95,126 +106,97 @@ function setLoadingState(isLoading, elements) {
   if (elements.loadingIndicator) {
     elements.loadingIndicator.style.display = isLoading ? "flex" : "none";
   }
-  if (!isLoading) {
-    // Ensure the spinner is completely hidden after the operation
-    elements.loadingIndicator.style.opacity = 0;
-  }
 }
 
-async function submitQuery() {
-  const input = document.querySelector("#question");
-  const elements = {
-    submitButton: document.getElementById("submitButton"),
-    loadingIndicator: document.getElementById("loadingIndicator"),
-    responseContainer: document.getElementById("responseContainer"),
-  };
+function submitQuery(query) {
+  const loadingSpinner = document.querySelector("#loading-spinner");
+  const resultsContainer = document.querySelector("#responseContainer");
 
-  try {
-    if (!input.value.trim()) {
-      alert("Please enter a valid question");
-      return;
-    }
+  loadingSpinner.style.display = "block";
+  resultsContainer.innerHTML = "";
 
-    elements.responseContainer.innerHTML = "";
-    setLoadingState(true, elements);
-
-    const response = await fetch("/query", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: input.value.trim() }),
+  fetch("/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: query }),
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.error) throw new Error(data.error);
+      if (data.job_id) {
+        pollJobStatus(data.job_id);
+      } else if (data.response_text) {
+        displayResults(data.response_text);
+      }
+    })
+    .catch((error) => {
+      loadingSpinner.style.display = "none";
+      resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     });
-
-    if (!response.ok) {
-      throw new Error(`Server error ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log("Query response:", data);
-
-    if (data.error) {
-      throw new Error(data.error);
-    }
-
-    if (data.response_text) {
-      displayResults(data.response_text);
-    } else {
-      throw new Error("Invalid response format");
-    }
-  } catch (error) {
-    console.error("Query error:", error);
-    elements.responseContainer.innerHTML = `
-      <p class="error">Error: ${error.message}</p>`;
-  } finally {
-    setLoadingState(false, elements);
-  }
 }
 
-function pollJobStatus(jobId, elements, maxAttempts = 60) {
-  const pollingInterval = 2000;
-  let attempts = 0;
+function pollJobStatus(jobId, retries = 30) {
+  const pollingInterval = 2000; // 2 seconds
+  const loadingSpinner = document.querySelector("#loading-spinner");
+  const resultsContainer = document.querySelector("#responseContainer");
 
-  const poll = async () => {
-    try {
-      attempts++;
+  if (!document.querySelector("#progress-message")) {
+    resultsContainer.innerHTML =
+      '<p id="progress-message">Processing query...</p>';
+  }
 
-      if (attempts > maxAttempts) {
-        throw new Error("Request timeout - please try again");
-      }
-
-      const response = await fetch(`/status/${jobId}`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("Job not found - please try again");
-        }
-        throw new Error(`Server error ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log(`Poll attempt ${attempts}, status:`, data);
-
-      if (data.status === "complete") {
-        if (data.response_text) {
-          displayResults(data.response_text);
+  fetch(`/status/${jobId}`)
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.status === "pending") {
+        document.querySelector("#progress-message").textContent =
+          "Searching through conference talks...";
+        if (retries > 0) {
+          setTimeout(() => pollJobStatus(jobId, retries - 1), pollingInterval);
         } else {
-          throw new Error("No results returned");
+          throw new Error("The query took too long. Please try again later.");
         }
-        setLoadingState(false, elements);
+      } else if (data.status === "complete") {
+        loadingSpinner.style.display = "none";
+        document.querySelector("#progress-message").remove();
+        displayResults(data.response_text);
       } else if (data.status === "error") {
-        throw new Error(data.error || "Processing error");
-      } else if (data.status === "pending") {
-        setTimeout(poll, pollingInterval);
+        loadingSpinner.style.display = "none";
+        throw new Error(data.error);
       }
-    } catch (error) {
-      console.error("Polling error:", error);
-      elements.responseContainer.innerHTML = `
-        <p class="error">Error: ${error.message}</p>`;
-      setLoadingState(false, elements);
-    }
-  };
-
-  poll();
+    })
+    .catch((error) => {
+      loadingSpinner.style.display = "none";
+      resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    });
 }
 
 // Display Search Results
-function displayResults(results) {
-  const container = document.getElementById("responseContainer");
-  if (!results || results.length === 0) {
-    container.innerHTML = "<p>No results found.</p>";
-    return;
+function displayResults(responseText) {
+  try {
+    // Parse responseText into allQuotes
+    if (typeof responseText === "string") {
+      allQuotes = JSON.parse(responseText);
+    } else {
+      allQuotes = responseText;
+    }
+
+    displayedCount = Math.min(5, allQuotes.length);
+
+    // Hide loadingIndicator once results are available
+    document.getElementById("loadingIndicator").style.display = "none";
+
+    // Render quotes or show "No Results"
+    if (allQuotes.length > 0) {
+      renderQuotes();
+      showActionButtons();
+    } else {
+      showNoResultsMessage();
+    }
+  } catch (error) {
+    console.error("Error parsing or displaying results:", error);
+    showError("Unable to display results. Please try again.");
   }
-
-  const list = document.createElement("ul");
-  results.forEach((item) => {
-    const listItem = document.createElement("li");
-    listItem.innerHTML = `
-      <strong>${item.speaker} (${item.role}):</strong> ${item.paragraph_text}<br>
-      <a href="${item.paragraph_deep_link}" target="_blank">View Full Paragraph</a>
-    `;
-    list.appendChild(listItem);
-  });
-
-  container.innerHTML = "";
-  container.appendChild(list);
 }
 
 // Quote Rendering
