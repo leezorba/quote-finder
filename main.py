@@ -1,13 +1,15 @@
 import os
 import json
+import uuid
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template
+from queue_utils import start_worker, job_queue, job_results
 from pinecones_utils import query_openai_paragraphs
 from openai_utils import get_chat_completion
 from prompts import search_assistant_system_prompt
 
 app = Flask(__name__)
-app.config['TIMEOUT'] = 300  # Increased timeout for long queries
+app.config['TIMEOUT'] = 300
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
@@ -128,7 +130,7 @@ def index():
 
 @app.route('/query', methods=['POST'])
 def ask():
-    """Process a query and return results."""
+    """Submit a query to the job queue."""
     data = request.get_json()
     user_message = (data.get('question') or "").strip()
 
@@ -137,12 +139,27 @@ def ask():
 
     print(f"\n[{datetime.now()}] Query: {user_message}")
 
-    try:
-        results = process_query(user_message)
-        return jsonify({'response_text': results})
-    except Exception as e:
-        print(f"Error processing query: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    job_id = str(uuid.uuid4())
+    job_results[job_id] = {'status': 'pending'}
+    job_queue.put((job_id, user_message))
+
+    return jsonify({'job_id': job_id})
+
+@app.route('/status/<job_id>', methods=['GET'])
+def job_status(job_id):
+    """Check the status of a job and return results if complete."""
+    if job_id not in job_results:
+        return jsonify({'error': 'Job not found'}), 404
+
+    result = job_results[job_id]
+    if result['status'] == 'complete':
+        return jsonify({'status': 'complete', 'response_text': result['data']})
+    elif result['status'] == 'error':
+        return jsonify({'status': 'error', 'error': result['error']})
+    return jsonify({'status': 'pending'})
+
+# Start the background worker thread
+start_worker(process_query)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
