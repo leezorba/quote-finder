@@ -22,6 +22,10 @@ logger.setLevel(logging.INFO)
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Debugging statements
+print(f"PINECONE_API_KEY: {PINECONE_API_KEY}")
+print(f"OPENAI_API_KEY: {OPENAI_API_KEY}")
+
 if not PINECONE_API_KEY or not OPENAI_API_KEY:
     raise ValueError("Missing required API keys. Please set PINECONE_API_KEY and OPENAI_API_KEY environment variables.")
 
