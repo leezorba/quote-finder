@@ -12,6 +12,7 @@ from pinecones_utils_openai import query_openai_paragraphs
 from openai_utils import get_chat_completion
 
 app = Flask(__name__)
+app.config['TIMEOUT'] = 120
 
 def verify_response(quotes, original_paragraphs):
     """
@@ -67,6 +68,13 @@ def verify_response(quotes, original_paragraphs):
             print(f"✗ Unverified quote: {quote_text[:50]}...")
 
     return verified_quotes
+
+@app.after_request
+def after_request(response):
+    response.headers["Proxy-Connection"] = "Keep-Alive"
+    response.headers["Connection"] = "Keep-Alive"
+    response.headers["Keep-Alive"] = "timeout=120, max=1000"
+    return response
 
 @app.route('/')
 def index():
