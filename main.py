@@ -1,24 +1,28 @@
-# main.py
-
 import os
 import time
 import json
-from flask import Flask, request, jsonify, render_template
-from functools import lru_cache
 from datetime import datetime, timedelta
+from flask import Flask, request, jsonify, render_template
+from queue import Queue
+import uuid
+import threading
 
 from prompts import search_assistant_system_prompt
 from pinecones_utils_openai import query_openai_paragraphs
 from openai_utils import get_chat_completion
 
 app = Flask(__name__)
-app.config['TIMEOUT'] = 300  # Increased to 5 minutes
+app.config['TIMEOUT'] = 120
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
+# Global job queue and results storage
+job_queue = Queue()
+job_results = {}
+
 # Cache dictionary to store results with timestamps
 query_cache = {}
-CACHE_TIMEOUT = timedelta(minutes=30)  # Cache expires after 30 minutes
+CACHE_TIMEOUT = timedelta(minutes=30)
 
 def get_cached_query_results(query, top_k):
     """Get cached results if they exist and haven't expired"""
@@ -89,13 +93,70 @@ def verify_response(quotes, original_paragraphs):
 
     return verified_quotes
 
-@app.after_request
-def after_request(response):
-    response.headers["Proxy-Connection"] = "Keep-Alive"
-    response.headers["Connection"] = "Keep-Alive"
-    response.headers["Keep-Alive"] = "timeout=300, max=1000"
-    response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
-    return response
+def process_query(user_message):
+    """Process a single query and return verified quotes"""
+    top_k = 10  # Reduced from 15
+    relevant_paragraphs = query_openai_paragraphs(query=user_message, top_k=top_k)
+    if not relevant_paragraphs:
+        raise Exception('No relevant paragraphs found')
+
+    user_prompt = (
+        "Relevant paragraphs with metadata:\n\n" +
+        "\n\n".join([
+            f"Speaker: {p['metadata'].get('speaker', '')}\n"
+            f"Role: {p['metadata'].get('role', '')}\n"
+            f"Title: {p['metadata'].get('title', '')}\n"
+            f"Link: {p['metadata'].get('youtube_link', '')}\n"
+            f"DeepLink: {p['metadata'].get('paragraph_deep_link', '')}\n"
+            f"Text: {p['paragraph_text']}"
+            for p in relevant_paragraphs
+        ]) +
+        f"\n\nUser question: {user_message}\n\n"
+        "Return ONLY a raw JSON array with exact quotes and metadata - no markdown or code blocks."
+    )
+
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            response_text = get_chat_completion(
+                system_prompt=search_assistant_system_prompt,
+                user_prompt=user_prompt,
+                model="gpt-4o",
+                temperature=0.7,
+                max_tokens=2000
+            )
+            quotes = json.loads(response_text)
+            if not isinstance(quotes, list):
+                raise ValueError("GPT output is not a JSON array")
+            verified_quotes = verify_response(quotes, relevant_paragraphs)
+            if not verified_quotes:
+                raise Exception('No verified quotes found')
+            return verified_quotes
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                raise
+            time.sleep(1)
+            continue
+
+# Start background worker
+def process_jobs():
+    """Background worker to process jobs"""
+    while True:
+        job_id, user_message = job_queue.get()
+        try:
+            result = process_query(user_message)
+            job_results[job_id] = {
+                'status': 'complete', 
+                'data': result,
+                'query': user_message  # Store query for caching
+            }
+        except Exception as e:
+            job_results[job_id] = {'status': 'error', 'error': str(e)}
+        job_queue.task_done()
+
+# Start the background worker thread
+worker = threading.Thread(target=process_jobs, daemon=True)
+worker.start()
 
 @app.route('/')
 def index():
@@ -104,7 +165,7 @@ def index():
 
 @app.route('/query', methods=['POST'])
 def ask():
-    """Handle the AJAX POST for searching."""
+    """Submit a query to the job queue"""
     data = request.get_json()
     user_message = (data.get('question') or "").strip()
 
@@ -112,85 +173,44 @@ def ask():
         return jsonify({'error': 'Question cannot be empty'}), 400
 
     print(f"\n[{datetime.now()}] Query: {user_message}")
-    print("Using single enhanced search mode (embed3)")
 
     # Check cache first
-    cached_results = get_cached_query_results(user_message, top_k=15)
+    cached_results = get_cached_query_results(user_message, top_k=10)
     if cached_results:
         return jsonify({'response_text': cached_results})
 
-    # If not in cache, proceed with normal query
-    try:
-        top_k = 15  # You can adjust if you like
-        relevant_paragraphs = query_openai_paragraphs(query=user_message, top_k=top_k)
-        if not relevant_paragraphs:
-            return jsonify({'error': 'No relevant paragraphs found'}), 404
+    # Create new job with the query stored
+    job_id = str(uuid.uuid4())
+    job_results[job_id] = {
+        'status': 'pending',
+        'query': user_message  # Store the query with the job
+    }
+    job_queue.put((job_id, user_message))
 
-        # 2) Build the user prompt for GPT
-        user_prompt = (
-            "Relevant paragraphs with metadata:\n\n" +
-            "\n\n".join([
-                f"Speaker: {p['metadata'].get('speaker', '')}\n"
-                f"Role: {p['metadata'].get('role', '')}\n"
-                f"Title: {p['metadata'].get('title', '')}\n"
-                f"Link: {p['metadata'].get('youtube_link', '')}\n"
-                f"DeepLink: {p['metadata'].get('paragraph_deep_link', '')}\n"
-                f"Text: {p['paragraph_text']}"
-                for p in relevant_paragraphs
-            ]) +
-            f"\n\nUser question: {user_message}\n\n"
-            "Return ONLY a raw JSON array with exact quotes and metadata - no markdown or code blocks."
-        )
+    return jsonify({'job_id': job_id})
 
-        # 3) Call GPT with up to 3 attempts if JSON is malformed
-        max_attempts = 3
-        quotes = None
+@app.route('/status/<job_id>', methods=['GET'])
+def job_status(job_id):
+    """Check job status and return results if complete"""
+    if job_id not in job_results:
+        return jsonify({'error': 'Job not found'}), 404
 
-        for attempt in range(max_attempts):
-            try:
-                response_text = get_chat_completion(
-                    system_prompt=search_assistant_system_prompt,
-                    user_prompt=user_prompt,
-                    model="gpt-4o",
-                    temperature=0.7,
-                    max_tokens=2000
-                )
-                print(f"[INFO] GPT Response received (attempt {attempt+1})")
-                print("Raw GPT response:", response_text)
-
-                candidate_quotes = json.loads(response_text)
-                if not isinstance(candidate_quotes, list):
-                    raise ValueError("GPT output is not a JSON array")
-
-                quotes = candidate_quotes
-                break  # success, break out of the retry loop
-
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"[ERROR] GPT returned malformed JSON on attempt {attempt+1}: {str(e)}")
-                if attempt == max_attempts - 1:
-                    return jsonify({
-                        'error': (
-                            "Sorry! We encountered an error. Please refresh the page and try again. "
-                            "If it continues failing, contact Hwa. "
-                            f"Error code: mjson (Failed after {max_attempts} attempts)"
-                        )
-                    }), 500
-                else:
-                    time.sleep(1)
-                    continue
-
-        # 4) Verify quotes
-        verified_quotes = verify_response(quotes, relevant_paragraphs)
-        if not verified_quotes:
-            return jsonify({'error': 'No verified quotes found'}), 404
-
-        # Cache the results before returning
-        cache_query_results(user_message, top_k, verified_quotes)
-        return jsonify({'response_text': verified_quotes})
-
-    except Exception as e:
-        print("[ERROR] Request failed:", str(e))
-        return jsonify({'error': str(e)}), 500
+    result = job_results[job_id]
+    if result['status'] == 'complete':
+        # Get the data and query
+        data = result['data']
+        user_message = result.get('query', '')
+        if user_message:  # Only cache if we have the query
+            cache_query_results(user_message, 10, data)
+        # Clean up job data
+        del job_results[job_id]
+        return jsonify({'status': 'complete', 'response_text': data})
+    elif result['status'] == 'error':
+        error = result['error']
+        del job_results[job_id]
+        return jsonify({'status': 'error', 'error': error})
+    else:
+        return jsonify({'status': 'pending'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

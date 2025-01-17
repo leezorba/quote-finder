@@ -68,7 +68,7 @@ function setupActionButtons() {
 }
 
 // Search Handling
-async function handleSearch(event) {
+function handleSearch(event) {
   event.preventDefault();
 
   const elements = {
@@ -80,42 +80,64 @@ async function handleSearch(event) {
   setLoadingState(true, elements);
   hideResults();
 
-  try {
-    const response = await submitQuery();
-    handleSearchResponse(response);
-  } catch (error) {
-    showError(error);
-  } finally {
-    setLoadingState(false, elements);
-  }
+  submitQuery();
 }
 
-async function submitQuery() {
-  const question = document.getElementById("question").value;
+function submitQuery() {
+  const input = document.querySelector("#search-input");
+  const loadingSpinner = document.querySelector("#loading-spinner");
+  const resultsContainer = document.querySelector("#results-container");
 
-  // We always use "embed3" now, so let's hardcode it
-  const selectedIndex = "embed3";
-
-  const response = await fetch("/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, selectedIndex }),
-  });
-
-  // If the server returns 500 or 404, etc., handle it:
-  if (!response.ok) {
-    let errorData = {};
-    try {
-      errorData = await response.json();
-    } catch (parseErr) {
-      // fallback if the JSON is not parseable
-      throw new Error(`HTTP ${response.status} error`);
-    }
-    throw new Error(errorData.error || `HTTP ${response.status} error`);
+  if (!input.value.trim()) {
+    alert("Please enter a question");
+    return;
   }
 
-  // If response.ok is true, parse JSON normally
-  return response.json();
+  loadingSpinner.style.display = "block";
+  resultsContainer.innerHTML = "";
+
+  fetch("/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: input.value.trim() }),
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.error) throw new Error(data.error);
+      if (data.job_id) {
+        pollJobStatus(data.job_id);
+      } else if (data.response_text) {
+        displayResults(data.response_text);
+      }
+    })
+    .catch((error) => {
+      loadingSpinner.style.display = "none";
+      resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    });
+}
+
+function pollJobStatus(jobId) {
+  fetch(`/status/${jobId}`)
+    .then((response) => response.json())
+    .then((data) => {
+      const loadingSpinner = document.querySelector("#loading-spinner");
+
+      if (data.status === "pending") {
+        setTimeout(() => pollJobStatus(jobId), 1000);
+      } else if (data.status === "complete") {
+        loadingSpinner.style.display = "none";
+        displayResults(data.response_text);
+      } else if (data.status === "error") {
+        loadingSpinner.style.display = "none";
+        throw new Error(data.error);
+      }
+    })
+    .catch((error) => {
+      const loadingSpinner = document.querySelector("#loading-spinner");
+      const resultsContainer = document.querySelector("#results-container");
+      loadingSpinner.style.display = "none";
+      resultsContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    });
 }
 
 function showError(error) {

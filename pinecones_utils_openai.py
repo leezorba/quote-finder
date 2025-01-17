@@ -107,7 +107,7 @@ def embed_texts_with_openai(texts: List[str], model: str = "text-embedding-3-lar
     logger.info(f"Completed embedding all {len(texts)} texts")
     return all_embeddings
 
-def query_openai_paragraphs(query: str, top_k=15) -> List[dict]:
+def query_openai_paragraphs(query: str, top_k=10) -> List[dict]:
     """
     Query the index using OpenAI embeddings.
     Returns a list of matching paragraph metadata.
