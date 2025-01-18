@@ -18,6 +18,10 @@ A Flask web application for searching and retrieving quotes from the General Con
 - Frontend: HTML/CSS/JavaScript
 - Additional: An LLM of your choice for query processing
 
+## System Architecture
+![system architecture](https://github.com/user-attachments/assets/bfdbed9b-d732-4b5f-861f-c8d2a63df7e1)
+
+
 ## Setup
 
 1. Install dependencies:
