@@ -3,23 +3,24 @@ import time
 import uuid
 import json
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from queue_utils import start_worker, job_queue, job_results
 from pinecones_utils_openai import query_openai_paragraphs
 from openai_utils import get_chat_completion
 from prompts import search_assistant_system_prompt
-
-print("\nEnvironment Variables in main.py:")
-for key, value in os.environ.items():
-    if 'KEY' in key:
-        masked_value = f"{'*' * 8}{value[-4:]}" if value else None
-        print(f"{key}: {masked_value}")
-print("\n")
+from auth_google import auth_bp, oauth  # Import the auth blueprint and OAuth
 
 app = Flask(__name__)
 app.config['TIMEOUT'] = 300  # Increased timeout for long queries
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
+app.secret_key = os.getenv('FLASK_SECRET_KEY')  # Add your secret key
+
+# Initialize OAuth
+oauth.init_app(app)
+
+# Register the Authentication Blueprint
+app.register_blueprint(auth_bp, url_prefix='/auth')
 
 # Cache dictionary to store results with timestamps
 query_cache = {}
@@ -128,8 +129,16 @@ def process_query(user_message):
 
 @app.route('/')
 def index():
-    """Render the main page."""
-    return render_template('index.html')
+    """
+    Render the main page or redirect to the login page.
+    If the user is authenticated, render the index.html template.
+    If not authenticated, redirect to the auth login page.
+    """
+    if 'user' in session:
+        return render_template('index.html')  # Render the main app page
+    else:
+        return redirect(url_for('auth.index'))  # Redirect to the auth index
+
 
 
 @app.route('/query', methods=['POST'])
