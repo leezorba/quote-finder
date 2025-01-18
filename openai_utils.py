@@ -4,15 +4,21 @@ from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv() 
 
-# Initialize the OpenAI client
+# Debug environment variables
+print("Environment Variables in openai_utils.py:")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+print(f"OPENAI_API_KEY exists: {bool(OPENAI_API_KEY)}")
+if OPENAI_API_KEY:
+    print(f"OPENAI_API_KEY length: {len(OPENAI_API_KEY)}")
 
+# Validate environment variables
 if not OPENAI_API_KEY:
     raise ValueError("Missing OpenAI API key. Please set the OPENAI_API_KEY environment variable.")
 
+# Initialize the OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-def get_chat_completion(system_prompt: str, user_prompt: str, model="gpt-4o", temperature=0.7, max_tokens=1500):
+def get_chat_completion(system_prompt: str, user_prompt: str, model="gpt-4o", temperature=0.7, max_tokens=2000):
     """
     Sends a chat completion request to OpenAI.
     Automatically retries on rate limit errors.

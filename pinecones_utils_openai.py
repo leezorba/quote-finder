@@ -2,11 +2,9 @@ import os
 import time
 import logging
 from typing import List
-
 from pinecone.grpc import PineconeGRPC as Pinecone
 from pinecone import ServerlessSpec
-from openai import OpenAI
-
+from openai_utils import client as openai_client 
 from dotenv import load_dotenv
 load_dotenv() 
 
@@ -21,18 +19,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Environment setup
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "default_pinecone_key")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "default_openai_key")
-print(f"PINECONE_API_KEY: {PINECONE_API_KEY}")
-print(f"OPENAI_API_KEY: {OPENAI_API_KEY}")
+# Debug environment variables
+print("Environment Variables in pinecones_utils_openai.py:")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+print(f"PINECONE_API_KEY exists: {bool(PINECONE_API_KEY)}")
+if PINECONE_API_KEY:
+    print(f"PINECONE_API_KEY length: {len(PINECONE_API_KEY)}")
 
-if not PINECONE_API_KEY or not OPENAI_API_KEY:
-    raise ValueError("Missing required API keys. Please set PINECONE_API_KEY and OPENAI_API_KEY environment variables.")
+# Validate environment variables
+if not PINECONE_API_KEY:
+    raise ValueError("Missing Pinecone API key. Please set the PINECONE_API_KEY environment variable.")
 
-# Create the clients
+# Create the Pinecone client
 pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Constants
 INDEX_NAME = "general-conf-embed3"  # Index for 3072-dim embeddings
