@@ -139,7 +139,10 @@ def index():
     else:
         return redirect(url_for('auth.index'))  # Redirect to the auth index
 
-
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
 
 @app.route('/query', methods=['POST'])
 def ask():

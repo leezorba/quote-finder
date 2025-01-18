@@ -47,6 +47,10 @@ function updateDarkModeButton() {
     : "Switch to Dark Mode";
 }
 
+document.getElementById("logoutButton").addEventListener("click", () => {
+  window.location.href = "/logout"; // Assumes you have a /logout route
+});
+
 function setupSearchForm() {
   document
     .getElementById("searchForm")

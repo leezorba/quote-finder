@@ -41,6 +41,7 @@ body {
 /* Theme Toggle */
 .theme-toggle {
   display: flex;
+  gap: 1rem;
   justify-content: flex-end;
   margin-bottom: 20px;
 }
@@ -51,6 +52,17 @@ body {
   font-size: 0.875rem;
   color: var(--text-muted);
   margin-top: 1rem;
+}
+
+#logoutButton {
+  background-color: transparent;
+  border: 1px solid var(--text-color);
+  color: var(--text-color);
+}
+
+#logoutButton:hover {
+  background-color: var(--text-color);
+  color: var(--background-color);
 }
 
 /* Toggle Button */
