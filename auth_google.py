@@ -23,6 +23,10 @@ google = oauth.register(
 # Allowed domain for login
 ALLOWED_DOMAIN = 'moregoodfoundation.org'
 
+ALLOWED_EMAILS = [
+    "hwaleepr@gmail.com",
+]
+
 @auth_bp.route('/')
 def index():
     """
@@ -44,10 +48,11 @@ def login():
 
 
 @auth_bp.route('/callback')
+@auth_bp.route('/callback')
 def callback():
     """
     Handle Google OAuth callback.
-    Validate domain and set session.
+    Validate domain or specific email addresses and set session.
     """
     try:
         # Exchange code for token
@@ -55,12 +60,12 @@ def callback():
         user_info = google.get('userinfo').json()
         email = user_info.get('email')
 
-        # Validate email domain
-        if email and email.endswith(f"@{ALLOWED_DOMAIN}"):
+        # Validate email domain or specific allowed emails
+        if email and (email in ALLOWED_EMAILS or email.endswith(f"@{ALLOWED_DOMAIN}")):
             session['user'] = user_info
             return redirect(url_for('auth.index'))
         else:
-            return "Access denied: unauthorized email domain", 403
+            return "Access denied: unauthorized email address", 403
     except Exception as e:
         return f"Error during login: {str(e)}", 500
 
