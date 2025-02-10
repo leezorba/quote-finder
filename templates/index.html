@@ -40,7 +40,8 @@
           </button>
         </form>
         <p class="subtitle">
-          * The search can take up to 2 minutes. Refresh to start a new search.
+          * The search can take up to 1 minute. Refresh to start a new search
+          (for now).
         </p>
 
         <!-- Loading Indicator -->
@@ -75,7 +76,15 @@
       </div>
     </div>
 
-    <!-- JavaScript -->
+    <!-- 1) Load the YouTube IFrame API -->
+    <script>
+      // This script loads the IFrame Player API code asynchronously.
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    </script>
+
+    <!-- 2) Your main scripts.js -->
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
   </body>
 </html>

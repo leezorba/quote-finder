@@ -1,6 +1,9 @@
 let allQuotes = [];
 let displayedCount = 5;
 
+// 1) Store references to YT players by index
+let players = {};
+
 // Utility Functions
 function getYouTubeVideoId(url) {
   if (!url) return null;
@@ -23,6 +26,23 @@ function getSessionInfo(deepLink) {
 
 // Event Listeners Setup
 document.addEventListener("DOMContentLoaded", () => {
+  // 1) Define possible placeholder strings
+  const placeholders = [
+    "How can I find more peace in my life?",
+    "I have a friend going through .... what quotes would be good for her?",
+    "What can I do to better understand ...?",
+  ];
+
+  // 2) Pick one at random
+  const randomPlaceholder =
+    placeholders[Math.floor(Math.random() * placeholders.length)];
+
+  // 3) Assign it to the #question input
+  const questionInput = document.getElementById("question");
+  if (questionInput) {
+    questionInput.placeholder = randomPlaceholder;
+  }
+
   setupEventListeners();
   hideActionButtons();
 });
@@ -194,6 +214,8 @@ function displayResults(responseText) {
     if (allQuotes.length > 0) {
       renderQuotes();
       showActionButtons();
+      // Re-initialize YT players after rendering new quotes
+      setupPlayers();
     } else {
       showNoResultsMessage();
     }
@@ -208,7 +230,11 @@ function renderQuotes() {
   const container = document.getElementById("responseContainer");
   container.innerHTML = allQuotes
     .slice(0, displayedCount)
-    .map((quote) => validateAndRenderQuote(quote))
+    // Assign an index to each quote for the YT Player logic
+    .map((quote, i) => {
+      quote.index = i;
+      return validateAndRenderQuote(quote);
+    })
     .join("");
 
   container.style.display = "block";
@@ -251,24 +277,27 @@ function generateQuoteCard(quote) {
         </button>
         ${
           videoId
-            ? `<button onclick="replayQuote(${
-                quote.index
-              }, ${startTime})" class="secondary-button">
-                Play Quote (${formatTime(startTime)})
-              </button>`
+            ? `<button onclick="replayQuote(${quote.index}, ${startTime})"
+                       class="secondary-button">
+                 Play Quote (${formatTime(startTime)})
+               </button>`
             : ""
         }
       </div>
-      ${videoId ? generateVideoEmbed(videoId, startTime) : ""}
+      ${videoId ? generateVideoEmbed(videoId, quote.index) : ""}
     </div>
   `;
 }
 
-function generateVideoEmbed(videoId, startTime) {
+// 2) Give each iframe a unique ID using the index
+function generateVideoEmbed(videoId, index) {
   return `
     <div class="video-container">
-      <iframe src="https://www.youtube.com/embed/${videoId}?start=${startTime}&enablejsapi=1"
-              allowfullscreen></iframe>
+      <iframe
+        id="player-${index}"
+        src="https://www.youtube.com/embed/${videoId}?enablejsapi=1"
+        allowfullscreen
+      ></iframe>
     </div>
   `;
 }
@@ -307,35 +336,37 @@ function hideLoadMoreButton() {
   document.getElementById("loadMoreButton").style.display = "none";
 }
 
-// YouTube Integration
-let players = {};
-
-function initYouTubeAPI() {
-  if (!window.YT) {
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.head.appendChild(tag);
-  } else {
-    setupPlayers();
-  }
-}
-
+// 3) YT IFrame Player setup
+//    Called automatically by the YT script once it is ready.
 function onYouTubeIframeAPIReady() {
   setupPlayers();
 }
 
+// Create a YT.Player for every rendered iframe
 function setupPlayers() {
-  document
-    .querySelectorAll(".video-container iframe")
-    .forEach((iframe, index) => {
-      players[index] = new YT.Player(iframe.id);
+  const iframes = document.querySelectorAll(".video-container iframe");
+  iframes.forEach((iframe, i) => {
+    // The iframe has id="player-<index>" from generateVideoEmbed
+    const iframeId = iframe.id;
+    // If there's already a player, skip or destroy before re-creating
+    if (players[i]) {
+      // Optional: players[i].destroy();
+    }
+    players[i] = new YT.Player(iframeId, {
+      // playerVars if you want to configure autoplay, etc.
+      events: {
+        // onReady: (event) => { event.target.playVideo(); },
+      },
     });
+  });
 }
 
+// 4) Seek to the correct time and play
 function replayQuote(index, startTime) {
-  if (players[index]?.seekTo) {
-    players[index].seekTo(startTime);
-    players[index].playVideo();
+  const player = players[index];
+  if (player && typeof player.seekTo === "function") {
+    player.seekTo(startTime, true);
+    player.playVideo();
   }
 }
 
