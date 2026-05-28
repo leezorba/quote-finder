@@ -59,7 +59,7 @@ nest-asyncio==1.6.0
 networkx==3.4.2
 numba==0.60.0
 numpy==2.0.2
-openai==1.59.7
+openai==2.38.0
 openai-whisper @ git+https://github.com/openai/whisper.git@517a43ecd132a2089d85f4ebc044728a71d49f6e
 openpyxl==3.1.5
 packaging==24.2
